@@ -34,6 +34,12 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+如需使用类 opencode 的 TUI 交互界面，请安装可选依赖：
+
+```bash
+pip install -e .[tui]
+```
+
 ## 配置模型与 API Key
 
 推荐方式：在项目根目录创建 `.env`（不要提交到仓库）。
@@ -123,6 +129,12 @@ cd /path/to/repo_agent
 python -m repo_agent
 ```
 
+启动 TUI 模式（双栏：聊天区 + 工具日志区）：
+
+```bash
+python -m repo_agent --tui
+```
+
 ## 交互示例
 
 ```
@@ -152,6 +164,12 @@ Agent: 项目中定义了以下函数：...
 | `/help` | 显示帮助 |
 | `Ctrl+C` | 退出程序 |
 
+TUI 额外快捷键：
+
+| 快捷键 | 说明 |
+|------|------|
+| `Ctrl+L` | 清空会话与日志 |
+
 ## 项目结构
 
 ```
@@ -171,6 +189,9 @@ repo_agent/
 │   │   ├── __init__.py
 │   │   ├── registry.py      # 工具注册表（声明 + 函数）
 │   │   └── repo.py          # 仓库工具：search_files, read_file, list_dir
+│   ├── ui/                  # TUI 交互层
+│   │   ├── __init__.py
+│   │   └── tui.py
 │   ├── rag/                 # RAG 预留（本地检索增强）
 │   │   ├── __init__.py
 │   │   ├── embeddings.py    # 本地 Embedding

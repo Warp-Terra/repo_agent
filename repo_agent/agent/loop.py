@@ -5,7 +5,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from google.genai import types
 
@@ -19,6 +19,8 @@ DEFAULT_RETRY_DELAY = 10  # 秒
 # 原始工具请求上限（用于防止重复调用导致死循环）
 MAX_RAW_TOOL_CALLS_PER_TURN = 60
 
+AgentEventHandler = Callable[[str, dict[str, Any]], None]
+
 
 @dataclass
 class FunctionCallRecord:
@@ -29,7 +31,58 @@ class FunctionCallRecord:
     call_id: str | None = None
 
 
-def _call_with_retry(request_fn: Any) -> Any:
+def _print_event(event_type: str, payload: dict[str, Any]) -> None:
+    """默认事件输出，保持原有 CLI 体验。"""
+    if event_type == "rate_limit_retry":
+        attempt = payload.get("attempt", "?")
+        delay = payload.get("delay_seconds", 0)
+        print(f"  [限流] 第 {attempt} 次重试，等待 {delay:.0f} 秒...")
+        return
+    if event_type == "rate_limit_failed":
+        retries = payload.get("max_retries", MAX_RETRIES)
+        print(f"  [限流] 已重试 {retries} 次仍失败。")
+        return
+    if event_type == "tool_call":
+        index = payload.get("index", "?")
+        name = payload.get("name", "unknown")
+        args = payload.get("args", {})
+        args_display = json.dumps(args, ensure_ascii=False)
+        print(f"  [工具调用 #{index}] {name}({args_display})")
+        return
+    if event_type == "tool_deduplicated":
+        print("  [工具去重] 检测到连续重复调用，复用上一次结果。")
+        return
+    if event_type == "tool_result":
+        preview = payload.get("preview", "")
+        print(f"  [工具结果] {preview}")
+        print()
+        return
+    if event_type == "warning":
+        message = payload.get("message", "")
+        print(f"  [警告] {message}")
+        return
+
+
+def _emit_event(
+    event_handler: AgentEventHandler | None,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    """分发 Agent 事件；未提供处理器时走默认控制台输出。"""
+    if event_handler is None:
+        _print_event(event_type, payload)
+        return
+    try:
+        event_handler(event_type, payload)
+    except Exception:
+        # 事件回调不应影响主流程
+        pass
+
+
+def _call_with_retry(
+    request_fn: Callable[[], Any],
+    event_handler: AgentEventHandler | None = None,
+) -> Any:
     """
     带自动重试的 API 调用封装。
     遇到 429 限流错误时，从错误信息中提取等待时间并自动重试。
@@ -45,14 +98,22 @@ def _call_with_retry(request_fn: Any) -> Any:
                 if match:
                     delay = min(float(match.group(1)), 60)
                 if attempt < MAX_RETRIES:
-                    print(f"  [限流] 第 {attempt} 次重试，等待 {delay:.0f} 秒...")
+                    _emit_event(
+                        event_handler,
+                        "rate_limit_retry",
+                        {"attempt": attempt, "delay_seconds": delay},
+                    )
                     time.sleep(delay)
                     continue
-                print(f"  [限流] 已重试 {MAX_RETRIES} 次仍失败。")
+                _emit_event(
+                    event_handler,
+                    "rate_limit_failed",
+                    {"max_retries": MAX_RETRIES},
+                )
             raise
 
 
-def _build_tools(provider: str) -> Any:
+def build_tools(provider: str) -> Any:
     """根据不同厂商构建工具声明。"""
     if provider == "gemini":
         declarations = [
@@ -103,6 +164,7 @@ def _invoke_gemini(
     runtime: AgentRuntime,
     history: list[Any],
     tools: list[types.Tool],
+    event_handler: AgentEventHandler | None = None,
 ) -> tuple[str, list[FunctionCallRecord], Any]:
     """执行一轮 Gemini 调用，并归一化返回结构。"""
     response = _call_with_retry(
@@ -113,7 +175,8 @@ def _invoke_gemini(
                 system_instruction=SYSTEM_PROMPT,
                 tools=tools,
             ),
-        )
+        ),
+        event_handler=event_handler,
     )
 
     candidate = response.candidates[0]
@@ -131,6 +194,7 @@ def _invoke_kimi(
     runtime: AgentRuntime,
     history: list[Any],
     tools: list[dict[str, Any]],
+    event_handler: AgentEventHandler | None = None,
 ) -> tuple[str, list[FunctionCallRecord], dict[str, Any]]:
     """执行一轮 Kimi(OpenAI 兼容)调用，并归一化返回结构。"""
     response = _call_with_retry(
@@ -140,7 +204,8 @@ def _invoke_kimi(
             tools=tools,
             tool_choice="auto",
             temperature=0.0,
-        )
+        ),
+        event_handler=event_handler,
     )
 
     message = response.choices[0].message
@@ -187,12 +252,13 @@ def _invoke_model_turn(
     runtime: AgentRuntime,
     history: list[Any],
     tools: Any,
+    event_handler: AgentEventHandler | None = None,
 ) -> tuple[str, list[FunctionCallRecord], Any]:
     """统一的一轮模型调用入口。"""
     if runtime.provider == "gemini":
-        return _invoke_gemini(runtime, history, tools)
+        return _invoke_gemini(runtime, history, tools, event_handler=event_handler)
     if runtime.provider == "kimi":
-        return _invoke_kimi(runtime, history, tools)
+        return _invoke_kimi(runtime, history, tools, event_handler=event_handler)
     raise ValueError(f"不支持的模型厂商：{runtime.provider}")
 
 
@@ -303,6 +369,7 @@ def agent_turn(
     tools: Any,
     history: list[Any],
     user_input: str,
+    event_handler: AgentEventHandler | None = None,
 ) -> str:
     """
     执行一轮完整的 Agent 交互（从用户输入到最终回答）。
@@ -321,7 +388,12 @@ def agent_turn(
     tool_result_previews: list[str] = []
 
     while True:
-        response_text, function_calls, assistant_payload = _invoke_model_turn(runtime, history, tools)
+        response_text, function_calls, assistant_payload = _invoke_model_turn(
+            runtime,
+            history,
+            tools,
+            event_handler=event_handler,
+        )
         history.append(assistant_payload)
 
         if not function_calls:
@@ -333,8 +405,11 @@ def agent_turn(
             if runtime.provider == "kimi" and not fc.call_id:
                 fc.call_id = f"call_{raw_tool_call_count}"
 
-            args_display = json.dumps(fc.args, ensure_ascii=False)
-            print(f"  [工具调用 #{raw_tool_call_count}] {fc.name}({args_display})")
+            _emit_event(
+                event_handler,
+                "tool_call",
+                {"index": raw_tool_call_count, "name": fc.name, "args": fc.args},
+            )
 
             signature = _build_tool_signature(fc.name, fc.args)
             is_consecutive_duplicate = (
@@ -343,15 +418,22 @@ def agent_turn(
 
             if is_consecutive_duplicate:
                 result = tool_result_cache[signature]
-                print("  [工具去重] 检测到连续重复调用，复用上一次结果。")
+                _emit_event(
+                    event_handler,
+                    "tool_deduplicated",
+                    {"name": fc.name, "args": fc.args},
+                )
             else:
                 tool_call_count += 1
                 result = _execute_tool(fc.name, fc.args)
                 tool_result_cache[signature] = result
 
             result_preview = result[:200] + "..." if len(result) > 200 else result
-            print(f"  [工具结果] {result_preview}")
-            print()
+            _emit_event(
+                event_handler,
+                "tool_result",
+                {"name": fc.name, "preview": result_preview},
+            )
             tool_result_previews.append(f"{fc.name}: {result_preview}")
             tool_results.append((fc, result))
             last_tool_signature = signature
@@ -359,7 +441,11 @@ def agent_turn(
         _append_tool_results(runtime.provider, history, tool_results)
 
         if tool_call_count >= MAX_TOOL_CALLS_PER_TURN:
-            print(f"  [警告] 已达到单轮最大有效工具调用次数 ({MAX_TOOL_CALLS_PER_TURN})，强制结束。")
+            _emit_event(
+                event_handler,
+                "warning",
+                {"message": f"已达到单轮最大有效工具调用次数 ({MAX_TOOL_CALLS_PER_TURN})，强制结束。"},
+            )
             local_answer = _build_tool_cap_answer(
                 tool_call_count=tool_call_count,
                 max_calls=MAX_TOOL_CALLS_PER_TURN,
@@ -369,8 +455,15 @@ def agent_turn(
             return local_answer
 
         if raw_tool_call_count >= MAX_RAW_TOOL_CALLS_PER_TURN:
-            print(
-                f"  [警告] 原始工具请求次数过多 ({raw_tool_call_count}/{MAX_RAW_TOOL_CALLS_PER_TURN})，疑似重复循环，强制结束。"
+            _emit_event(
+                event_handler,
+                "warning",
+                {
+                    "message": (
+                        f"原始工具请求次数过多 ({raw_tool_call_count}/{MAX_RAW_TOOL_CALLS_PER_TURN})，"
+                        "疑似重复循环，强制结束。"
+                    )
+                },
             )
             local_answer = _build_tool_cap_answer(
                 tool_call_count=tool_call_count,
@@ -401,7 +494,7 @@ def main() -> None:
     print("  输入问题开始对话，Ctrl+C 退出")
     print()
 
-    tools = _build_tools(runtime.provider)
+    tools = build_tools(runtime.provider)
     history: list[Any] = []
 
     print("Agent 已就绪。请输入您的问题：\n")
