@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "repo-agent"
-version = "0.2.0"
+version = "0.3.0"
 description = "本地代码仓库问答 Agent（Gemini/Kimi），支持后续 RAG 与知识库扩展"
 readme = "README.md"
 requires-python = ">=3.10"

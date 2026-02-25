@@ -5,4 +5,4 @@ repo_agent - 本地代码仓库问答 Agent。
 为本地 RAG 与知识库扩展预留模块。
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

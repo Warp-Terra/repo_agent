@@ -10,6 +10,8 @@ DEFAULT_MODEL_IDS = {
     "kimi": "kimi-k2-turbo-preview",
 }
 DEFAULT_KIMI_BASE_URL = "https://api.moonshot.cn/v1"
+DEFAULT_AGENTD_HOST = "127.0.0.1"
+DEFAULT_AGENTD_PORT = 8765
 
 _DOTENV_CACHE: dict[str, str] | None = None
 
@@ -130,3 +132,30 @@ def load_kimi_base_url() -> str:
 def load_api_key() -> str:
     """兼容旧接口：读取 Gemini API Key。"""
     return load_provider_api_key("gemini")
+
+
+def load_agentd_host() -> str:
+    """读取 Agent 服务监听主机。"""
+    return _get_config_value(["AGENTD_HOST"]) or DEFAULT_AGENTD_HOST
+
+
+def load_agentd_port() -> int:
+    """读取 Agent 服务监听端口。"""
+    raw = _get_config_value(["AGENTD_PORT"])
+    if raw is None:
+        return DEFAULT_AGENTD_PORT
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_AGENTD_PORT
+    if value <= 0 or value > 65535:
+        return DEFAULT_AGENTD_PORT
+    return value
+
+
+def load_agentd_token() -> str | None:
+    """读取 Agent 服务访问令牌。"""
+    token = _get_config_value(["AGENTD_TOKEN"])
+    if not token:
+        return None
+    return token
