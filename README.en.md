@@ -1,48 +1,48 @@
-# 本地代码仓库问答 Agent
+# Local Code Repository Q&A Agent
 
-基于 Python 的本地代码仓库问答 Agent，支持多模型厂商（Gemini、Kimi）。通过 Function Calling/Tool Calling 机制，自动调用工具函数访问**当前工作目录**下的代码仓库，回答用户的自然语言问题。当前版本采用「**自动托管 Agent 子进程 + TUI 交互端**」架构，项目结构为后续**本地 RAG** 与**本地知识库**扩展预留模块。
+A Python-based local code repository Q&A agent that supports multiple model providers (Gemini, Kimi). Through the Function Calling/Tool Calling mechanism, it automatically invokes tool functions to access the code repository under the **current working directory** and answer users' natural-language questions. The current version adopts an architecture of "**managed Agent subprocess + TUI frontend**", and the project layout reserves modules for future **local RAG** and **local knowledge base** extensions.
 
-## 功能
+## Features
 
-- 自然语言提问（支持中文）
-- 自动搜索代码文件内容（`search_files`）
-- 读取指定文件片段（`read_file`）
-- 列出目录结构（`list_dir`）
-- 支持 Gemini 与 Kimi（OpenAI 兼容）自由切换
-- 基于 Function Calling/Tool Calling 的 Agent 循环
-- 单轮最多 30 次有效工具调用（含重复调用保护）
-- 连续重复的同参工具调用会自动复用上次结果
-- `read_file` 默认读取 120 行，减少碎片化读取
-- 多轮对话支持
-- agent 与 TUI 分离运行（agent 为独立子进程）
-- 自动托管启动（启动 `repo-agent` 后自动拉起 agent 并进入 TUI）
+- Natural-language questions (Chinese supported)
+- Automatic code content search (`search_files`)
+- Read specific file snippets (`read_file`)
+- List directory structure (`list_dir`)
+- Freely switch between Gemini and Kimi (OpenAI-compatible)
+- Agent loop based on Function Calling/Tool Calling
+- Up to 30 effective tool calls per turn (with duplicate-call protection)
+- Consecutive repeated tool calls with identical arguments automatically reuse the previous result
+- `read_file` reads 120 lines by default to reduce fragmented reads
+- Multi-turn conversation support
+- Agent and TUI run separately (agent runs as an independent subprocess)
+- Managed startup (starting `repo-agent` automatically launches the agent and enters TUI)
 
-## 环境要求
+## Requirements
 
 - Python 3.10+
-- Gemini API Key（Google AI Studio）或 Kimi API Key（Moonshot）
+- Gemini API Key (Google AI Studio) or Kimi API Key (Moonshot)
 
-## 安装
+## Installation
 
-在**本仓库根目录**（即包含 `repo_agent/` 包和 `pyproject.toml` 的目录）下执行：
+Run in the **repository root** (the directory containing the `repo_agent/` package and `pyproject.toml`):
 
 ```bash
 pip install -r requirements.txt
 ```
 
-或以可编辑方式安装，便于开发与在任意目录运行：
+Or install in editable mode for development and running from any directory:
 
 ```bash
 pip install -e .
 ```
 
-`textual` 已作为基础依赖内置，无需额外安装 TUI 扩展包。
-安装后可直接使用 `repo-agent` 命令（等价于 `python -m repo_agent`）。
+`textual` is already included as a base dependency, so no extra TUI extension package is needed.
+After installation, you can directly use the `repo-agent` command (equivalent to `python -m repo_agent`).
 
-## 配置模型与 API Key
+## Configure Model and API Key
 
-推荐方式：在项目根目录创建 `.env`（不要提交到仓库）。
-可以先复制模板：
+Recommended approach: create `.env` in the project root (do not commit it to the repository).
+You can copy the template first:
 
 ```bash
 # Linux / macOS
@@ -52,10 +52,10 @@ cp .env.example .env
 Copy-Item .env.example .env
 ```
 
-先设置模型厂商：
+Set the model provider first:
 
 ```bash
-# Linux / macOS（gemini / kimi 二选一）
+# Linux / macOS (choose one: gemini / kimi)
 export LLM_PROVIDER=gemini
 
 # Windows PowerShell
@@ -64,7 +64,7 @@ $env:LLM_PROVIDER="gemini"
 
 ### Gemini
 
-**方式一：环境变量**
+**Method 1: Environment variables**
 
 ```bash
 # Linux / macOS
@@ -77,14 +77,14 @@ $env:GEMINI_API_KEY="your_api_key_here"
 set GEMINI_API_KEY=your_api_key_here
 ```
 
-**方式二：`.env` 文件**
+**Method 2: `.env` file**
 
-在以下任一位置创建 `.env` 文件并写入 `GEMINI_API_KEY=your_api_key_here`：
+Create a `.env` file in either location below and write `GEMINI_API_KEY=your_api_key_here`:
 
-- 运行 `python -m repo_agent` 时的**当前工作目录**（即被分析的仓库根目录）
-- 本项目的**仓库根目录**（即 `repo_agent` 文件夹所在目录）
+- The **current working directory** when running `python -m repo_agent` (the repository root being analyzed)
+- The **project repository root** (the directory containing the `repo_agent` folder)
 
-### Kimi（Moonshot）
+### Kimi (Moonshot)
 
 ```bash
 # Linux / macOS
@@ -98,9 +98,9 @@ $env:MOONSHOT_API_KEY="your_api_key_here"
 $env:KIMI_MODEL_ID="kimi-k2-turbo-preview"
 ```
 
-可选：如果需要自定义 OpenAI 兼容地址，可设置 `KIMI_BASE_URL`（默认 `https://api.moonshot.cn/v1`）。
+Optional: if you need a custom OpenAI-compatible endpoint, set `KIMI_BASE_URL` (default: `https://api.moonshot.cn/v1`).
 
-`.env` 示例：
+`.env` example:
 
 ```env
 LLM_PROVIDER=kimi
@@ -108,147 +108,147 @@ MOONSHOT_API_KEY=your_kimi_api_key_here
 KIMI_MODEL_ID=kimi-k2-turbo-preview
 KIMI_BASE_URL=https://api.moonshot.cn/v1
 
-# 可选：切回 Gemini 时使用
+# Optional: used when switching back to Gemini
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-## 使用方法
+## Usage
 
-Agent 只会访问**repo-agent 启动时的当前工作目录**下的文件，因此请先进入要分析的代码仓库目录再启动。
+The agent only accesses files under the **current working directory where repo-agent is started**, so enter the target code repository directory before starting.
 
-启动方式（自动托管模式）：
+Startup (managed mode):
 
 ```bash
 repo-agent
-# 或
+# or
 python -m repo_agent
 ```
 
-说明：当前版本不再提供 `--mode service/cli/tui/local` 运行模式参数。
+Note: the current version no longer provides the `--mode service/cli/tui/local` runtime mode parameter.
 
-当前行为如下：
+Current behavior:
 
-1. 自动启动一个独立的 agent 服务子进程（HTTP daemon）。
-2. 自动打开 TUI，并连接该子进程。
-3. 退出 TUI 后，主进程会自动关闭该 agent 子进程。
+1. Automatically starts an independent agent service subprocess (HTTP daemon).
+2. Automatically opens TUI and connects to that subprocess.
+3. After exiting TUI, the main process automatically stops that agent subprocess.
 
-可选参数：
+Optional parameters:
 
-- `--host` / `--port`：指定托管 agent 的监听地址（默认 `127.0.0.1:8765`）。
-- `--token`：指定访问令牌（请求头 `X-Agent-Token`）。
-- `--session-id`：TUI 启动后附着到指定会话。
-- `--max-events`：每个会话保留的最大事件数（默认 `2000`）。
-- `--startup-timeout`：等待 agent 启动超时时间（秒，默认 `15`）。
+- `--host` / `--port`: Specify the listening address of the managed agent (default: `127.0.0.1:8765`).
+- `--token`: Specify an access token (request header `X-Agent-Token`).
+- `--session-id`: Attach to a specified session after TUI startup.
+- `--max-events`: Maximum number of events retained per session (default: `2000`).
+- `--startup-timeout`: Timeout for waiting agent startup (seconds, default: `15`).
 
-环境变量（可选）：
+Environment variables (optional):
 
-- `AGENTD_HOST`：默认监听地址（默认 `127.0.0.1`）。
-- `AGENTD_PORT`：默认监听端口（默认 `8765`）。
-- `AGENTD_TOKEN`：服务访问令牌（等价于启动参数 `--token`）。
-- `REPO_AGENTD_ACCESS_LOG`：是否输出 HTTP 访问日志（`1/true/yes/on` 表示开启，默认关闭）。
+- `AGENTD_HOST`: Default listen address (default: `127.0.0.1`).
+- `AGENTD_PORT`: Default listen port (default: `8765`).
+- `AGENTD_TOKEN`: Service access token (equivalent to startup parameter `--token`).
+- `REPO_AGENTD_ACCESS_LOG`: Whether to output HTTP access logs (`1/true/yes/on` means enabled, disabled by default).
 
-## 交互示例
+## Interaction Example
 
 ```
-You: 这个项目的目录结构是什么？
-  [工具调用 #1] list_dir({"path": "."})
-  [工具结果] ./
+You: What is the directory structure of this project?
+  [Tool Call #1] list_dir({"path": "."})
+  [Tool Result] ./
   ├── repo_agent/
   ├── pyproject.toml
   ├── README.md
   ...
 
-Agent: 这个项目包含以下文件：...
+Agent: This project contains the following files: ...
 
-You: 找一下所有包含 "def " 的文件
-  [工具调用 #1] search_files({"query": "def "})
-  [工具结果] 找到 15 条匹配...
+You: Find all files that contain "def "
+  [Tool Call #1] search_files({"query": "def "})
+  [Tool Result] 15 matches found...
 
-Agent: 项目中定义了以下函数：...
+Agent: The following functions are defined in this project: ...
 ```
 
-## 内置命令
+## Built-in Commands
 
-| 命令 | 说明 |
+| Command | Description |
 |------|------|
-| `/clear` | 清除对话历史 |
-| `/status` | 查看会话状态（busy/pending 等） |
-| `/cancel` | 取消等待中的任务（不强制中断当前执行） |
-| `/quit` | 退出程序 |
-| `/help` | 显示帮助 |
-| `Ctrl+C` | 退出程序 |
+| `/clear` | Clear conversation history |
+| `/status` | View session status (busy/pending, etc.) |
+| `/cancel` | Cancel pending tasks (does not forcibly interrupt current execution) |
+| `/quit` | Exit program |
+| `/help` | Show help |
+| `Ctrl+C` | Exit program |
 
-TUI 额外快捷键：
+Additional TUI shortcuts:
 
-| 快捷键 | 说明 |
+| Shortcut | Description |
 |------|------|
-| `Ctrl+L` | 清空会话与日志 |
-| `Ctrl+K` | 取消等待中的任务 |
+| `Ctrl+L` | Clear session and logs |
+| `Ctrl+K` | Cancel pending tasks |
 
-命令补全：
-- 在输入框键入 `/` 后会显示命令候选。
-- 使用 `↑` / `↓` 选择候选命令，输入框会同步自动补全。
-- 使用 `Tab` 补全当前候选。
-- `Enter` 在未补全时会先补全一次；再次按 `Enter` 才会执行命令。
+Command completion:
+- Type `/` in the input box to show command candidates.
+- Use `↑` / `↓` to select a candidate command, and the input box will auto-complete accordingly.
+- Use `Tab` to complete the current candidate.
+- If not yet completed, pressing `Enter` completes once first; press `Enter` again to execute the command.
 
-## 项目结构
+## Project Structure
 
 ```
 repo_agent/
-├── repo_agent/              # 主包
+├── repo_agent/              # Main package
 │   ├── __init__.py
-│   ├── __main__.py          # 入口：自动托管 agent + TUI
-│   ├── config/              # 配置
+│   ├── __main__.py          # Entry: managed agent + TUI
+│   ├── config/              # Configuration
 │   │   ├── __init__.py
-│   │   └── settings.py      # API Key + agentd 地址/token
-│   ├── agent/               # Agent 核心
+│   │   └── settings.py      # API Key + agentd address/token
+│   ├── agent/               # Agent core
 │   │   ├── __init__.py
-│   │   ├── client.py        # 多厂商客户端（Gemini/Kimi）
-│   │   ├── prompts.py       # 系统提示与常量
-│   │   └── loop.py          # 主循环与工具调度
-│   ├── daemon/              # 常驻服务端
+│   │   ├── client.py        # Multi-provider client (Gemini/Kimi)
+│   │   ├── prompts.py       # System prompts and constants
+│   │   └── loop.py          # Main loop and tool scheduling
+│   ├── daemon/              # Long-running service side
 │   │   ├── __init__.py
 │   │   ├── app.py           # HTTP API
-│   │   ├── models.py        # 事件/任务模型
+│   │   ├── models.py        # Event/task models
 │   │   └── session_manager.py
-│   ├── remote/              # 远程客户端 SDK
+│   ├── remote/              # Remote client SDK
 │   │   ├── __init__.py
 │   │   └── client.py
-│   ├── tools/               # 工具
+│   ├── tools/               # Tools
 │   │   ├── __init__.py
-│   │   ├── registry.py      # 工具注册表（声明 + 函数）
-│   │   └── repo.py          # 仓库工具：search_files, read_file, list_dir
-│   ├── ui/                  # 远程 TUI 交互层
+│   │   ├── registry.py      # Tool registry (declarations + functions)
+│   │   └── repo.py          # Repository tools: search_files, read_file, list_dir
+│   ├── ui/                  # Remote TUI interaction layer
 │   │   ├── __init__.py
 │   │   └── tui.py
-│   ├── rag/                 # RAG 预留（本地检索增强）
+│   ├── rag/                 # RAG reserved (local retrieval enhancement)
 │   │   ├── __init__.py
-│   │   ├── embeddings.py    # 本地 Embedding
-│   │   ├── store.py         # 向量存储
-│   │   └── retriever.py     # 检索器
-│   └── kb/                  # 知识库预留
+│   │   ├── embeddings.py    # Local embedding
+│   │   ├── store.py         # Vector storage
+│   │   └── retriever.py     # Retriever
+│   └── kb/                  # Knowledge base reserved
 │       ├── __init__.py
-│       ├── loader.py        # 文档加载
-│       └── index.py         # 索引构建
+│       ├── loader.py        # Document loading
+│       └── index.py         # Index building
 ├── requirements.txt
-├── pyproject.toml           # 包配置，支持 pip install -e .
+├── pyproject.toml           # Package config, supports pip install -e .
 ├── .gitignore
 └── README.md
 ```
 
-## 扩展说明
+## Extension Notes
 
-- **新增工具**：在 `repo_agent/tools/` 下实现函数，并在 `registry.py` 中注册名称与函数声明（会自动适配 Gemini/Kimi）。
-- **本地 RAG**：在 `rag/` 中实现 `embeddings`、`store`、`retriever`，可新增工具（如 `search_knowledge_base`）或作为上下文注入。
-- **本地知识库**：在 `kb/` 中实现 `loader` 与 `index`，对文档分块、向量化后写入 `rag.store`。
+- **Add new tools**: Implement functions under `repo_agent/tools/`, and register names and function declarations in `registry.py` (automatically adapted for Gemini/Kimi).
+- **Local RAG**: Implement `embeddings`, `store`, and `retriever` in `rag/`, then either add new tools (such as `search_knowledge_base`) or inject as context.
+- **Local knowledge base**: Implement `loader` and `index` in `kb/`, chunk and vectorize documents, then write them into `rag.store`.
 
-## 安全说明
+## Security Notes
 
-- 所有文件操作均为只读
-- 路径限制在当前工作目录内，禁止路径逃逸
-- 不执行任何 shell 命令
-- 不写入任何文件
-- `agent` 服务默认本机监听（`127.0.0.1`）
-- 如需额外保护，可配置 `AGENTD_TOKEN` 启用请求鉴权
-- `.env` 已在 `.gitignore` 中，默认不会被提交
-- 提交前请确认仓库中没有明文密钥（如 `sk-`、`AIza`）
+- All file operations are read-only
+- Path access is restricted within the current working directory; path traversal is forbidden
+- No shell commands are executed
+- No files are written
+- The `agent` service listens on localhost by default (`127.0.0.1`)
+- For extra protection, configure `AGENTD_TOKEN` to enable request authentication
+- `.env` is listed in `.gitignore` and will not be committed by default
+- Before committing, ensure no plaintext secrets exist in the repository (for example, `sk-`, `AIza`)
