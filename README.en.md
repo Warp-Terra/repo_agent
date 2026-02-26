@@ -1,5 +1,7 @@
 # Local Code Repository Q&A Agent
 
+[English](./README.en.md) | [中文](./README.zh.md) | [Home](./README.md)
+
 A Python-based local code repository Q&A agent that supports multiple model providers (Gemini, Kimi). Through the Function Calling/Tool Calling mechanism, it automatically invokes tool functions to access the code repository under the **current working directory** and answer users' natural-language questions. The current version adopts an architecture of "**managed Agent subprocess + TUI frontend**", and the project layout reserves modules for future **local RAG** and **local knowledge base** extensions.
 
 ## Features

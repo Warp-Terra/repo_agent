@@ -1,5 +1,7 @@
 # 本地代码仓库问答 Agent
 
+[English](./README.en.md) | [中文](./README.zh.md) | [首页](./README.md)
+
 基于 Python 的本地代码仓库问答 Agent，支持多模型厂商（Gemini、Kimi）。通过 Function Calling/Tool Calling 机制，自动调用工具函数访问**当前工作目录**下的代码仓库，回答用户的自然语言问题。当前版本采用「**自动托管 Agent 子进程 + TUI 交互端**」架构，项目结构为后续**本地 RAG** 与**本地知识库**扩展预留模块。
 
 ## 功能
