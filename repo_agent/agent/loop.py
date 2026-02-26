@@ -509,10 +509,10 @@ def main() -> None:
         if not user_input:
             continue
 
-        if user_input.lower() in ("/quit", "/exit", "/q"):
+        if user_input.lower() == "/quit":
             print("\n再见！")
             break
-        if user_input.lower() in ("/clear", "/reset"):
+        if user_input.lower() == "/clear":
             history.clear()
             print("对话历史已清除。\n")
             continue

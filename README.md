@@ -1,6 +1,6 @@
 # 本地代码仓库问答 Agent
 
-基于 Python 的本地代码仓库问答 Agent，支持多模型厂商（Gemini、Kimi）。通过 Function Calling/Tool Calling 机制，自动调用工具函数访问**当前工作目录**下的代码仓库，回答用户的自然语言问题。当前版本采用「**Agent 独立服务 + CLI/TUI 远程控制端**」架构，项目结构为后续**本地 RAG** 与**本地知识库**扩展预留模块。
+基于 Python 的本地代码仓库问答 Agent，支持多模型厂商（Gemini、Kimi）。通过 Function Calling/Tool Calling 机制，自动调用工具函数访问**当前工作目录**下的代码仓库，回答用户的自然语言问题。当前版本采用「**自动托管 Agent 子进程 + TUI 交互端**」架构，项目结构为后续**本地 RAG** 与**本地知识库**扩展预留模块。
 
 ## 功能
 
@@ -14,8 +14,8 @@
 - 连续重复的同参工具调用会自动复用上次结果
 - `read_file` 默认读取 120 行，减少碎片化读取
 - 多轮对话支持
-- `agentd` 常驻服务（会话可独立于 TUI 存活）
-- 远程 CLI 与 TUI（观察、遥控同一会话）
+- agent 与 TUI 分离运行（agent 为独立子进程）
+- 自动托管启动（启动 `repo-agent` 后自动拉起 agent 并进入 TUI）
 
 ## 环境要求
 
@@ -36,11 +36,8 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-如需使用类 opencode 的 TUI 交互界面，请安装可选依赖：
-
-```bash
-pip install -e .[tui]
-```
+`textual` 已作为基础依赖内置，无需额外安装 TUI 扩展包。
+安装后可直接使用 `repo-agent` 命令（等价于 `python -m repo_agent`）。
 
 ## 配置模型与 API Key
 
@@ -117,47 +114,38 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 ## 使用方法
 
-Agent 只会访问**服务进程当前工作目录**下的文件，因此请先进入要分析的代码仓库目录再启动 `--mode service`。
+Agent 只会访问**repo-agent 启动时的当前工作目录**下的文件，因此请先进入要分析的代码仓库目录再启动。
 
-1. 启动常驻服务（独立进程）
-
-```bash
-python -m repo_agent --mode service
-```
-
-默认监听 `http://127.0.0.1:8765`，可通过环境变量或参数调整：
-
-- 环境变量：`AGENTD_HOST`、`AGENTD_PORT`、`AGENTD_TOKEN`
-- 参数：`--host`、`--port`、`--token`
-
-2. 启动 CLI（远程模式，默认模式）
+启动方式（自动托管模式）：
 
 ```bash
+repo-agent
+# 或
 python -m repo_agent
-# 等同于
-python -m repo_agent --mode cli
 ```
 
-3. 启动 TUI（远程模式，双栏：聊天区 + 工具日志区）
+说明：当前版本不再提供 `--mode service/cli/tui/local` 运行模式参数。
 
-```bash
-python -m repo_agent --mode tui
-# 或兼容旧参数
-python -m repo_agent --tui
-```
+当前行为如下：
 
-如需连接非默认地址，可追加：
+1. 自动启动一个独立的 agent 服务子进程（HTTP daemon）。
+2. 自动打开 TUI，并连接该子进程。
+3. 退出 TUI 后，主进程会自动关闭该 agent 子进程。
 
-```bash
-python -m repo_agent --mode cli --endpoint http://127.0.0.1:9000
-python -m repo_agent --mode tui --endpoint http://127.0.0.1:9000
-```
+可选参数：
 
-4. 可选：保留旧单进程本地模式
+- `--host` / `--port`：指定托管 agent 的监听地址（默认 `127.0.0.1:8765`）。
+- `--token`：指定访问令牌（请求头 `X-Agent-Token`）。
+- `--session-id`：TUI 启动后附着到指定会话。
+- `--max-events`：每个会话保留的最大事件数（默认 `2000`）。
+- `--startup-timeout`：等待 agent 启动超时时间（秒，默认 `15`）。
 
-```bash
-python -m repo_agent --mode local
-```
+环境变量（可选）：
+
+- `AGENTD_HOST`：默认监听地址（默认 `127.0.0.1`）。
+- `AGENTD_PORT`：默认监听端口（默认 `8765`）。
+- `AGENTD_TOKEN`：服务访问令牌（等价于启动参数 `--token`）。
+- `REPO_AGENTD_ACCESS_LOG`：是否输出 HTTP 访问日志（`1/true/yes/on` 表示开启，默认关闭）。
 
 ## 交互示例
 
@@ -183,10 +171,10 @@ Agent: 项目中定义了以下函数：...
 
 | 命令 | 说明 |
 |------|------|
-| `/clear`、`/reset` | 清除对话历史 |
+| `/clear` | 清除对话历史 |
 | `/status` | 查看会话状态（busy/pending 等） |
 | `/cancel` | 取消等待中的任务（不强制中断当前执行） |
-| `/quit`、`/exit`、`/q` | 退出程序 |
+| `/quit` | 退出程序 |
 | `/help` | 显示帮助 |
 | `Ctrl+C` | 退出程序 |
 
@@ -197,13 +185,19 @@ TUI 额外快捷键：
 | `Ctrl+L` | 清空会话与日志 |
 | `Ctrl+K` | 取消等待中的任务 |
 
+命令补全：
+- 在输入框键入 `/` 后会显示命令候选。
+- 使用 `↑` / `↓` 选择候选命令，输入框会同步自动补全。
+- 使用 `Tab` 补全当前候选。
+- `Enter` 在未补全时会先补全一次；再次按 `Enter` 才会执行命令。
+
 ## 项目结构
 
 ```
 repo_agent/
 ├── repo_agent/              # 主包
 │   ├── __init__.py
-│   ├── __main__.py          # 入口：service / cli / tui / local
+│   ├── __main__.py          # 入口：自动托管 agent + TUI
 │   ├── config/              # 配置
 │   │   ├── __init__.py
 │   │   └── settings.py      # API Key + agentd 地址/token
@@ -220,9 +214,6 @@ repo_agent/
 │   ├── remote/              # 远程客户端 SDK
 │   │   ├── __init__.py
 │   │   └── client.py
-│   ├── cli/                 # 远程 CLI
-│   │   ├── __init__.py
-│   │   └── remote.py
 │   ├── tools/               # 工具
 │   │   ├── __init__.py
 │   │   ├── registry.py      # 工具注册表（声明 + 函数）
@@ -257,7 +248,7 @@ repo_agent/
 - 路径限制在当前工作目录内，禁止路径逃逸
 - 不执行任何 shell 命令
 - 不写入任何文件
-- `agentd` 默认本机监听（`127.0.0.1`）
+- `agent` 服务默认本机监听（`127.0.0.1`）
 - 如需额外保护，可配置 `AGENTD_TOKEN` 启用请求鉴权
 - `.env` 已在 `.gitignore` 中，默认不会被提交
 - 提交前请确认仓库中没有明文密钥（如 `sk-`、`AIza`）

@@ -77,6 +77,10 @@ class RemoteAgentClient:
         """取消等待中的请求。"""
         return self._request("POST", f"/sessions/{session_id}/cancel", payload={})
 
+    def shutdown(self) -> dict[str, Any]:
+        """请求服务端优雅关闭。"""
+        return self._request("POST", "/shutdown", payload={})
+
     def get_events(
         self,
         session_id: str,

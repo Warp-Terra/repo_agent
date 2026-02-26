@@ -11,10 +11,13 @@ requires-python = ">=3.10"
 dependencies = [
     "google-genai>=1.0.0",
     "openai>=1.0.0",
+    "textual>=0.58.1",
 ]
 
+[project.scripts]
+repo-agent = "repo_agent.__main__:main"
+
 [project.optional-dependencies]
-tui = ["textual>=0.58.1"]
 # 后续 RAG/知识库 可在此增加依赖，例如：
 # rag = ["sentence-transformers", "chromadb"]
 # kb = ["langchain-text-splitters"]

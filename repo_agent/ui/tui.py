@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import time
 from typing import Any
@@ -9,10 +10,39 @@ from typing import Any
 from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
+from textual import events
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from repo_agent.config import load_agentd_host, load_agentd_port
 from repo_agent.remote import RemoteAgentClient
+
+
+@dataclass(frozen=True)
+class CommandSpec:
+    """内置命令定义。"""
+
+    command: str
+    aliases: tuple[str, ...]
+    description: str
+
+
+COMMAND_SPECS: tuple[CommandSpec, ...] = (
+    CommandSpec(command="/help", aliases=(), description="显示帮助"),
+    CommandSpec(command="/status", aliases=(), description="查看会话状态"),
+    CommandSpec(command="/clear", aliases=(), description="清空会话"),
+    CommandSpec(command="/cancel", aliases=(), description="取消等待任务"),
+    CommandSpec(command="/quit", aliases=(), description="退出程序"),
+)
+
+COMMAND_TOKENS: tuple[tuple[str, str], ...] = tuple(
+    (token, spec.description)
+    for spec in COMMAND_SPECS
+    for token in (spec.command, *spec.aliases)
+)
+
+COMMAND_CANONICAL_MAP: dict[str, str] = {
+    token: spec.command for spec in COMMAND_SPECS for token in (spec.command, *spec.aliases)
+}
 
 
 class AgentTuiApp(App[None]):
@@ -50,6 +80,19 @@ class AgentTuiApp(App[None]):
         margin: 0 1 1 1;
         border: round #bc4749;
     }
+
+    #command_suggest {
+        margin: 0 1;
+        padding: 0 1;
+        border: round #3a506b;
+        color: #d9d9d9;
+        display: none;
+        height: auto;
+    }
+
+    #command_suggest.visible {
+        display: block;
+    }
     """
 
     BINDINGS = [
@@ -72,6 +115,9 @@ class AgentTuiApp(App[None]):
         self.event_cursor = 0
         self._stop_polling = False
         self._poll_error_notified = False
+        self._command_candidates: list[tuple[str, str]] = []
+        self._command_index = 0
+        self._programmatic_input_value: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -79,11 +125,13 @@ class AgentTuiApp(App[None]):
         with Horizontal(id="main"):
             yield RichLog(id="chat_log", wrap=True, highlight=False, markup=False, auto_scroll=True)
             yield RichLog(id="tool_log", wrap=True, highlight=False, markup=False, auto_scroll=True)
+        yield Static("", id="command_suggest")
         yield Input(placeholder="输入问题后回车发送", id="prompt_input")
         yield Footer()
 
     def on_mount(self) -> None:
         self.prompt_input.disabled = True
+        self._hide_command_suggestions()
         self.chat_log.write(f"System: 正在连接 Agent 服务 {self.endpoint} ...")
         self._connect_service()
         self._poll_events()
@@ -103,6 +151,10 @@ class AgentTuiApp(App[None]):
     def prompt_input(self) -> Input:
         return self.query_one("#prompt_input", Input)
 
+    @property
+    def command_suggest(self) -> Static:
+        return self.query_one("#command_suggest", Static)
+
     def action_clear_session(self) -> None:
         if not self.connected or not self.session_id:
             self.chat_log.write("System: 尚未连接会话。")
@@ -121,10 +173,15 @@ class AgentTuiApp(App[None]):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         user_input = event.value.strip()
         event.input.value = ""
+        self._hide_command_suggestions()
         if not user_input:
             return
 
         if self._handle_command(user_input):
+            return
+
+        if user_input.startswith("/"):
+            self.chat_log.write("System: 未知命令，请输入 /help 查看可用命令。")
             return
 
         if not self.connected or not self.session_id:
@@ -140,24 +197,130 @@ class AgentTuiApp(App[None]):
         self.chat_log.write("System: 正在思考...")
         self._submit_turn(user_input)
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != "prompt_input":
+            return
+        # 通过上下键/Tab 的程序化补全会触发 Input.Changed，这里忽略该次刷新，
+        # 避免候选列表被立即按完整命令再次过滤成单项。
+        if self._programmatic_input_value is not None and event.value == self._programmatic_input_value:
+            self._programmatic_input_value = None
+            return
+        self._programmatic_input_value = None
+        self._update_command_suggestions(event.value)
+
+    def on_key(self, event: events.Key) -> None:
+        if self.focused is not self.prompt_input:
+            return
+        if not self._command_candidates:
+            return
+
+        if event.key == "up":
+            self._move_command_selection(-1)
+            self._consume_key_event(event)
+            return
+        if event.key == "down":
+            self._move_command_selection(1)
+            self._consume_key_event(event)
+            return
+        if event.key == "tab":
+            self._apply_selected_command()
+            self._consume_key_event(event)
+            return
+        if event.key == "enter":
+            selected = self._selected_command()
+            current = self.prompt_input.value.strip().lower()
+            if selected and current != selected:
+                self._apply_selected_command()
+                self._consume_key_event(event)
+
     def _handle_command(self, user_input: str) -> bool:
-        lowered = user_input.lower()
-        if lowered in ("/quit", "/exit", "/q"):
+        normalized = user_input.strip().split(maxsplit=1)[0].lower()
+        command = COMMAND_CANONICAL_MAP.get(normalized)
+        if command is None:
+            return False
+
+        if command == "/quit":
             self.exit()
             return True
-        if lowered in ("/clear", "/reset"):
+        if command == "/clear":
             self.action_clear_session()
             return True
-        if lowered == "/status":
+        if command == "/status":
             self._query_status_remote()
             return True
-        if lowered == "/cancel":
+        if command == "/cancel":
             self.action_cancel_turn()
             return True
-        if lowered == "/help":
+        if command == "/help":
             self.chat_log.write("System: 可用命令 /help /status /clear /cancel /quit")
             return True
         return False
+
+    @staticmethod
+    def _consume_key_event(event: events.Key) -> None:
+        event.stop()
+        prevent_default = getattr(event, "prevent_default", None)
+        if callable(prevent_default):
+            prevent_default()
+
+    def _selected_command(self) -> str | None:
+        if not self._command_candidates:
+            return None
+        return self._command_candidates[self._command_index][0]
+
+    def _move_command_selection(self, delta: int) -> None:
+        if not self._command_candidates:
+            return
+        self._command_index = (self._command_index + delta) % len(self._command_candidates)
+        self._apply_selected_command()
+        self._render_command_suggestions()
+
+    def _apply_selected_command(self) -> None:
+        selected = self._selected_command()
+        if not selected:
+            return
+        self._programmatic_input_value = selected
+        self.prompt_input.value = selected
+        if hasattr(self.prompt_input, "cursor_position"):
+            self.prompt_input.cursor_position = len(selected)
+
+    def _update_command_suggestions(self, value: str) -> None:
+        text = value.strip().lower()
+        if not text.startswith("/"):
+            self._hide_command_suggestions()
+            return
+        # 目前命令不支持参数，输入空格后视为离开补全态。
+        if " " in text:
+            self._hide_command_suggestions()
+            return
+
+        candidates = [(token, desc) for token, desc in COMMAND_TOKENS if token.startswith(text)]
+        if not candidates:
+            self._hide_command_suggestions()
+            return
+
+        self._command_candidates = candidates
+        if self._command_index >= len(self._command_candidates):
+            self._command_index = 0
+        self._render_command_suggestions()
+
+    def _render_command_suggestions(self) -> None:
+        if not self._command_candidates:
+            self._hide_command_suggestions()
+            return
+
+        lines = ["命令补全（↑↓选择，Tab补全，Enter执行）"]
+        for index, (token, desc) in enumerate(self._command_candidates):
+            cursor = ">" if index == self._command_index else " "
+            lines.append(f"{cursor} {token}  {desc}")
+        self.command_suggest.update("\n".join(lines))
+        self.command_suggest.add_class("visible")
+
+    def _hide_command_suggestions(self) -> None:
+        self._command_candidates = []
+        self._command_index = 0
+        self.command_suggest.update("")
+        self.command_suggest.remove_class("visible")
 
     @work(thread=True)
     def _connect_service(self) -> None:

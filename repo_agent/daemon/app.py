@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -22,12 +24,22 @@ def _to_int(value: str | None, default: int, min_value: int, max_value: int) -> 
     return max(min_value, min(max_value, parsed))
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    """读取环境变量布尔开关。"""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    return normalized in {"1", "true", "yes", "on"}
+
+
 class AgentDaemonHandler(BaseHTTPRequestHandler):
     """服务端 HTTP 处理器。"""
 
     server_version = "RepoAgentDaemon/0.1"
     manager: SessionManager
     auth_token: str | None = None
+    access_log_enabled: bool = _env_flag("REPO_AGENTD_ACCESS_LOG", default=False)
 
     def do_GET(self) -> None:  # noqa: N802
         if not self._check_auth():
@@ -78,6 +90,11 @@ class AgentDaemonHandler(BaseHTTPRequestHandler):
         body = self._read_json_body()
 
         try:
+            if parts == ["shutdown"]:
+                self._send_json(HTTPStatus.OK, {"ok": True, "message": "agent 服务即将关闭"})
+                threading.Thread(target=self.server.shutdown, daemon=True, name="agentd-shutdown").start()
+                return
+
             if parts == ["sessions"]:
                 requested_id = body.get("session_id")
                 if requested_id is not None and not isinstance(requested_id, str):
@@ -134,8 +151,9 @@ class AgentDaemonHandler(BaseHTTPRequestHandler):
         self._send_error_json(HTTPStatus.NOT_FOUND, f"未找到路径：{parsed.path}")
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
-        """使用默认 stderr 输出 HTTP 访问日志。"""
-        super().log_message(format, *args)
+        """按配置输出 HTTP 访问日志。"""
+        if self.access_log_enabled:
+            super().log_message(format, *args)
 
     def _check_auth(self) -> bool:
         token = self.auth_token
