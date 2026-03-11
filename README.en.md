@@ -26,20 +26,35 @@ A Python-based local code repository Q&A agent that supports multiple model prov
 
 ## Installation
 
-Run in the **repository root** (the directory containing the `repo_agent/` package and `pyproject.toml`):
+Create a virtual environment first, then install from `requirements.txt` so dependencies stay isolated.
+
+**1. Create and activate a virtual environment**
+
+```bash
+# Windows PowerShell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Linux / macOS
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**2. Install dependencies in the project root**
 
 ```bash
 pip install -r requirements.txt
-```
-
-Or install in editable mode for development and running from any directory:
-
-```bash
 pip install -e .
 ```
 
 `textual` is already included as a base dependency, so no extra TUI extension package is needed.
-After installation, you can directly use the `repo-agent` command (equivalent to `python -m repo_agent`).
+After installation, you can use the `repo-agent` command (equivalent to `python -m repo_agent`).
+
+### Development and testing
+
+```bash
+pytest tests -v
+```
 
 ## Configure Model and API Key
 

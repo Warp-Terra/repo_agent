@@ -26,20 +26,35 @@
 
 ## 安装
 
-在**本仓库根目录**（即包含 `repo_agent/` 包和 `pyproject.toml` 的目录）下执行：
+建议先创建虚拟环境，再用 `requirements.txt` 安装依赖，避免与系统 Python 混用。
+
+**1. 创建并激活虚拟环境**
+
+```bash
+# Windows PowerShell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Linux / macOS
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**2. 在项目根目录安装依赖**
 
 ```bash
 pip install -r requirements.txt
-```
-
-或以可编辑方式安装，便于开发与在任意目录运行：
-
-```bash
 pip install -e .
 ```
 
-`textual` 已作为基础依赖内置，无需额外安装 TUI 扩展包。
+`textual` 已作为基础依赖内置，无需额外安装 TUI 扩展包。  
 安装后可直接使用 `repo-agent` 命令（等价于 `python -m repo_agent`）。
+
+### 开发与测试
+
+```bash
+pytest tests -v
+```
 
 ## 配置模型与 API Key
 
