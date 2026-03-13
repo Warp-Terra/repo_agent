@@ -1,9 +1,8 @@
 """
-Embedding 封装：支持本地模型（sentence-transformers）与云端 API（Kimi / OpenAI）。
+Embedding 封装：支持本地模型（sentence-transformers）与云端 OpenAI API。
 
-通过 .env 中 REPO_AGENT_EMBEDDING=kimi 或 openai 使用云端向量化；
-kimi 时复用 MOONSHOT_API_KEY（与对话共用），openai 时用 OPENAI_API_KEY。
-无需在本地加载 PyTorch，适合内存较小的开发机。
+通过 .env 中 REPO_AGENT_EMBEDDING=openai 使用云端向量化（需 OPENAI_API_KEY）；
+默认 local 使用本地模型。Kimi 不提供 Embedding API，仅支持 local / openai。
 """
 
 from __future__ import annotations
@@ -17,13 +16,12 @@ _LOCAL_MODEL_CACHE: object | None = None
 _LOCAL_MODEL_NAME: str | None = None
 # 仅警告一次：当前进程正在使用 local 向量化（占内存高）
 _LOCAL_EMBEDDING_WARNED: bool = False
-# 复用单例 OpenAI 客户端，避免每批请求新建 client 导致连接池/缓冲累积（数 GB 级泄漏）
-_KIMI_CLIENT: object | None = None
+# 复用单例 OpenAI 客户端，避免每批请求新建 client 导致连接池/缓冲累积
 _OPENAI_CLIENT: object | None = None
 
 
 def _embedding_provider() -> str:
-    """当前配置的向量化方式：local / kimi / openai。"""
+    """当前配置的向量化方式：local / openai。"""
     from repo_agent.config.settings import load_embedding_provider
     return load_embedding_provider()
 
@@ -50,21 +48,6 @@ def _get_local_model():
     return _LOCAL_MODEL_CACHE
 
 
-def _get_kimi_client():
-    """复用单例 Kimi（OpenAI 兼容）客户端，避免每批请求新建导致内存累积。"""
-    global _KIMI_CLIENT
-    if _KIMI_CLIENT is not None:
-        return _KIMI_CLIENT
-    from openai import OpenAI
-    from repo_agent.config.settings import load_embedding_api_key, load_kimi_base_url
-    client = OpenAI(
-        api_key=load_embedding_api_key("kimi"),
-        base_url=load_kimi_base_url(),
-    )
-    _KIMI_CLIENT = client
-    return _KIMI_CLIENT
-
-
 def _get_openai_client():
     """复用单例 OpenAI 客户端，避免每批请求新建导致内存累积。"""
     global _OPENAI_CLIENT
@@ -75,27 +58,6 @@ def _get_openai_client():
     client = OpenAI(api_key=load_embedding_api_key("openai"))
     _OPENAI_CLIENT = client
     return _OPENAI_CLIENT
-
-
-def _embed_via_kimi(text: str) -> list[float]:
-    """单条文本走 Kimi（Moonshot）Embedding API（OpenAI 兼容 /v1/embeddings）。"""
-    from repo_agent.config.settings import KIMI_EMBEDDING_MODEL
-    client = _get_kimi_client()
-    r = client.embeddings.create(model=KIMI_EMBEDDING_MODEL, input=text)
-    return r.data[0].embedding
-
-
-def _embed_batch_via_kimi(texts: list[str], batch_size: int = 32) -> list[list[float]]:
-    """批量走 Kimi Embedding API（复用单例 client，避免内存泄漏）。"""
-    from repo_agent.config.settings import KIMI_EMBEDDING_MODEL
-    client = _get_kimi_client()
-    out: list[list[float]] = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
-        r = client.embeddings.create(model=KIMI_EMBEDDING_MODEL, input=batch)
-        by_idx = {d.index: d.embedding for d in r.data}
-        out.extend([by_idx[j] for j in range(len(batch))])
-    return out
 
 
 def _embed_via_openai(text: str) -> list[float]:
@@ -121,16 +83,13 @@ def get_embedding(text: str) -> list[float]:
     """
     将单段文本编码为向量。
 
-    根据 REPO_AGENT_EMBEDDING（local / kimi / openai）选择本地模型或云端 API。
-    kimi 时复用 MOONSHOT_API_KEY，openai 时用 OPENAI_API_KEY。
+    根据 REPO_AGENT_EMBEDDING（local / openai）选择本地模型或 OpenAI 云端 API。
     """
     provider = _embedding_provider()
     if provider == "local":
         model = _get_local_model()
         vec = model.encode(text, normalize_embeddings=True)
         return vec.tolist()
-    if provider == "kimi":
-        return _embed_via_kimi(text)
     if provider == "openai":
         return _embed_via_openai(text)
     raise ValueError(f"不支持的向量化方式：{provider}")
@@ -151,14 +110,12 @@ def get_embeddings_batch(texts: list[str], batch_size: int = 32) -> list[list[fl
             _LOCAL_EMBEDDING_WARNED = True
             print(
                 "[RAG] 当前使用本地 embedding 模型，内存占用约 1–2GB。"
-                " 若期望使用云端 API，请在 .env 中设置 REPO_AGENT_EMBEDDING=kimi 或 openai。",
+                " 若期望使用云端 API，请在 .env 中设置 REPO_AGENT_EMBEDDING=openai 并配置 OPENAI_API_KEY。",
                 flush=True,
             )
         model = _get_local_model()
         vecs = model.encode(texts, normalize_embeddings=True, batch_size=batch_size)
         return [v.tolist() for v in vecs]
-    if provider == "kimi":
-        return _embed_batch_via_kimi(texts, batch_size=batch_size)
     if provider == "openai":
         return _embed_batch_via_openai(texts, batch_size=batch_size)
     raise ValueError(f"不支持的向量化方式：{provider}")

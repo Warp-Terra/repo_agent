@@ -2,7 +2,7 @@
 
 [English](./README.en.md) | [中文](./README.zh.md) | [首页](./README.md)
 
-基于 Python 的本地代码仓库问答 Agent，使用 Kimi（Moonshot）付费 API。通过 Function Calling/Tool Calling 机制，自动调用工具函数访问**当前工作目录**下的代码仓库，回答用户的自然语言问题。当前版本采用「**自动托管 Agent 子进程 + TUI 交互端**」架构，项目结构为后续**本地 RAG** 与**本地知识库**扩展预留模块。
+基于 Python 的本地代码仓库问答 Agent，使用 Kimi（Moonshot）付费 API（当前版本 **0.3.0**）。通过 Function Calling/Tool Calling 机制，自动调用工具函数访问**当前工作目录**下的代码仓库，回答用户的自然语言问题；采用「**自动托管 Agent 子进程 + TUI 交互端**」架构，项目结构为后续**本地 RAG** 与**本地知识库**扩展预留模块。
 
 ## 功能
 
@@ -27,7 +27,7 @@
 
 ## 安装
 
-建议先创建虚拟环境，再用 `requirements.txt` 安装依赖，避免与系统 Python 混用。
+建议先创建虚拟环境，再安装依赖，避免与系统 Python 混用。
 
 **1. 创建并激活虚拟环境**
 
@@ -41,9 +41,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-**2. 在项目根目录安装依赖**
+**2. 在项目根目录安装**
 
 ```bash
+# 方式一：可编辑安装（推荐），核心依赖由 pyproject.toml 提供
+pip install -e .
+
+# 方式二：先装 requirements.txt 再可编辑安装（含 pytest，便于开发与测试）
 pip install -r requirements.txt
 pip install -e .
 ```
@@ -86,13 +90,22 @@ $env:KIMI_MODEL_ID="kimi-k2-turbo-preview"
 
 可选：如果需要自定义 OpenAI 兼容地址，可设置 `KIMI_BASE_URL`（默认 `https://api.moonshot.cn/v1`）。
 
-`.env` 示例：
+`.env` 示例（完整模板见项目根目录 `.env.example`）：
 
 ```env
+# Kimi（Moonshot）配置
 LLM_PROVIDER=kimi
 MOONSHOT_API_KEY=your_kimi_api_key_here
 KIMI_MODEL_ID=kimi-k2-turbo-preview
 KIMI_BASE_URL=https://api.moonshot.cn/v1
+
+# RAG 向量化（可选）：local（默认）| openai；Kimi 无 Embedding API
+# REPO_AGENT_EMBEDDING=openai   # 需配置 OPENAI_API_KEY
+
+# Agent 服务配置（可选）
+AGENTD_HOST=127.0.0.1
+AGENTD_PORT=8765
+AGENTD_TOKEN=
 ```
 
 ## 使用方法
@@ -214,8 +227,9 @@ repo_agent/
 │       ├── __init__.py
 │       ├── loader.py        # 文档加载
 │       └── index.py         # 索引构建（分块、向量化、写入 store）
-├── requirements.txt
-├── pyproject.toml           # 包配置，支持 pip install -e .
+├── requirements.txt         # 可选，含 pytest，用于开发/测试
+├── pyproject.toml           # 包配置与依赖，支持 pip install -e .
+├── .env.example             # 环境变量模板，复制为 .env 后填写
 ├── .gitignore
 └── README.md
 ```
@@ -244,10 +258,7 @@ repo-agent build-kb
   `pip install torch --index-url https://download.pytorch.org/whl/cpu`，然后再 `pip install sentence-transformers`（或 `pipx inject repo-agent sentence-transformers numpy`）。
 - **低内存 / 无 GPU 环境（如 16GB 内存办公机）**：可设置环境变量 `REPO_AGENT_LOW_MEMORY=1` 再执行 build-kb 或使用语义检索。该模式下会使用更小的 embedding 模型（paraphrase-MiniLM-L3-v2）并减小建索引的批大小，显著降低内存与 CPU 占用，适合「16GB 内存、无独显」的机器。若之前未在低内存模式下建过索引，启用后需重新执行一次 `repo-agent build-kb`。  
   示例（PowerShell）：`$env:REPO_AGENT_LOW_MEMORY="1"; repo-agent build-kb`
-- **使用云端 API 做向量化（推荐内存紧张时）**：在 **运行 `repo-agent build-kb` 之前**，在 `.env` 中设置 `REPO_AGENT_EMBEDDING=kimi` 或 `REPO_AGENT_EMBEDDING=openai`。  
-  - **kimi**：使用 Moonshot 的 `moonshot-v1-embedding` 模型，**复用 MOONSHOT_API_KEY**（与对话同一把 key），无需额外 key；建索引与检索不占本地模型内存。  
-  - **openai**：使用 OpenAI Embedding，需单独配置 `OPENAI_API_KEY`。  
-  执行 build-kb 时首行会显示当前向量化方式（如「向量化：kimi（Moonshot-v1-embedding）」）；若显示「向量化：local」说明未读到配置，仍会使用本地模型。使用云端后需重新执行一次 `repo-agent build-kb`（因向量维度与本地模型不同）。云端按调用量计费。
+- **使用云端 API 做向量化（推荐内存紧张时）**：在 **运行 `repo-agent build-kb` 之前**，在 `.env` 中设置 `REPO_AGENT_EMBEDDING=openai` 并配置 `OPENAI_API_KEY`；建索引与检索不占本地模型内存，按调用量计费。执行 build-kb 时首行会显示「向量化：openai」或「向量化：local」。使用云端后需重新执行一次 `repo-agent build-kb`（因向量维度与本地模型不同）。**说明**：Kimi 不提供 Embedding API，向量化仅支持 local（默认）与 openai。
 - **建索引时内存/CPU 仍很高**：当前默认使用 SimpleStore（按批落盘，内存 <100MB），不再默认加载 Chroma。若需 Chroma 后端可设 `REPO_AGENT_USE_CHROMA=1`（内存占用高）。也可用 `repo-agent build-kb --max-chunks 5000` 或 `--max-files 500` 限制索引规模。
 - 未安装 `[rag]` 时，调用 `search_knowledge_base` 会得到安装提示，不影响其他工具使用。
 

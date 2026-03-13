@@ -9,6 +9,7 @@ __pycache__/
 dist/
 build/
 *.egg
+.pytest_cache/
 
 # 虚拟环境
 .venv/

@@ -148,16 +148,13 @@ def load_agentd_token() -> str | None:
     return token
 
 
-# RAG 向量化：local（本地模型）| kimi | openai，默认 kimi（云端 API，不占本地内存）
-EMBEDDING_PROVIDERS = {"local", "kimi", "openai"}
-DEFAULT_EMBEDDING_PROVIDER = "kimi"
-
-# Kimi 向量化模型名（Moonshot 兼容 OpenAI /v1/embeddings 接口）
-KIMI_EMBEDDING_MODEL = "moonshot-v1-embedding"
+# RAG 向量化：local（本地模型）| openai（Kimi 不提供 Embedding API，仅支持此二者）
+EMBEDDING_PROVIDERS = {"local", "openai"}
+DEFAULT_EMBEDDING_PROVIDER = "local"
 
 
 def load_embedding_provider() -> str:
-    """读取 RAG 向量化方式：local / kimi（Moonshot-v1-embedding）/ openai。"""
+    """读取 RAG 向量化方式：local / openai。"""
     raw = _get_config_value(["REPO_AGENT_EMBEDDING", "REPO_AGENT_EMBEDDING_PROVIDER"])
     if not raw:
         return DEFAULT_EMBEDDING_PROVIDER
@@ -168,14 +165,7 @@ def load_embedding_provider() -> str:
 
 
 def load_embedding_api_key(provider: str) -> str:
-    """读取云端 Embedding 所用 API Key（kimi 用 MOONSHOT_API_KEY，openai 用 OPENAI_API_KEY）。"""
-    if provider == "kimi":
-        key = _get_config_value(["MOONSHOT_API_KEY", "KIMI_API_KEY", "OPENAI_API_KEY"])
-        if key:
-            return key
-        raise ValueError(
-            "未找到 MOONSHOT_API_KEY。使用 Kimi 向量化时请在 .env 中设置 MOONSHOT_API_KEY（与对话共用即可）。"
-        )
+    """读取云端 Embedding 所用 API Key（仅 openai 需要 OPENAI_API_KEY）。"""
     if provider == "openai":
         key = _get_config_value(["OPENAI_API_KEY"])
         if key:

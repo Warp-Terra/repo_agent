@@ -110,14 +110,11 @@ def _cmd_build_kb(args: argparse.Namespace) -> None:
     max_files = getattr(args, "max_files", None)
     max_chunks = getattr(args, "max_chunks", None)
     provider = load_embedding_provider()
-    if provider == "kimi":
-        print("向量化：kimi（Moonshot-v1-embedding），复用 MOONSHOT_API_KEY，不加载本地模型。")
-    elif provider == "openai":
+    if provider == "openai":
         print("向量化：openai（云端 API），不加载本地模型，内存占用低。")
     else:
-        print("向量化：local（本地模型）。【当前使用本地模型，内存占用高】")
-        print("  若期望使用云端 API 却看到本行，请检查 .env：REPO_AGENT_EMBEDDING=kimi 或 openai（注意拼写与无多余空格）。")
-        print("  使用云端时需设置 MOONSHOT_API_KEY（kimi）或 OPENAI_API_KEY（openai）。")
+        print("向量化：local（本地模型）。")
+        print("  若期望使用云端向量化，请在 .env 中设置 REPO_AGENT_EMBEDDING=openai 并配置 OPENAI_API_KEY。")
     store = VectorStore(project_root=root)
     backend = store.backend_name()
     print(f"存储后端：{backend}（默认 SimpleStore，按批落盘，内存 <100MB）。")
