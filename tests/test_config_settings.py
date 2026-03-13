@@ -39,10 +39,8 @@ def test_parse_env_file_missing_returns_empty():
     assert got == {}
 
 
-def test_normalize_provider_gemini_kimi():
+def test_normalize_provider_kimi():
     """支持的厂商名应被标准化为小写。"""
-    assert settings._normalize_provider("gemini") == "gemini"
-    assert settings._normalize_provider("GEMINI") == "gemini"
     assert settings._normalize_provider("kimi") == "kimi"
     assert settings._normalize_provider("Kimi") == "kimi"
 
@@ -55,29 +53,22 @@ def test_normalize_provider_aliases():
 
 
 def test_normalize_provider_unsupported_raises():
-    """不支持的厂商应抛出 ValueError。"""
+    """不支持的厂商（如 gemini、unknown）应抛出 ValueError。"""
     with pytest.raises(ValueError, match="不支持的 LLM_PROVIDER"):
         settings._normalize_provider("unknown")
+    with pytest.raises(ValueError, match="不支持的 LLM_PROVIDER"):
+        settings._normalize_provider("gemini")
 
 
 def test_load_llm_provider_default(clean_env):
-    """未设置 LLM_PROVIDER 时默认应为 gemini。"""
-    assert settings.load_llm_provider() == "gemini"
+    """未设置 LLM_PROVIDER 时默认应为 kimi。"""
+    assert settings.load_llm_provider() == "kimi"
 
 
 def test_load_llm_provider_from_env(clean_env, monkeypatch):
     """应从环境变量读取 LLM_PROVIDER。"""
     monkeypatch.setenv("LLM_PROVIDER", "kimi")
     assert settings.load_llm_provider() == "kimi"
-
-
-def test_load_model_id_gemini(clean_env, monkeypatch):
-    """gemini 时应返回对应默认或配置的 model id。"""
-    monkeypatch.setenv("LLM_PROVIDER", "gemini")
-    # 未设置 GEMINI_MODEL_ID 时用默认
-    assert "gemini" in settings.load_model_id()
-    monkeypatch.setenv("GEMINI_MODEL_ID", "gemini-2.0")
-    assert settings.load_model_id() == "gemini-2.0"
 
 
 def test_load_model_id_kimi(clean_env, monkeypatch):

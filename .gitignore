@@ -22,6 +22,9 @@ env/
 *.swo
 *~
 
+# 知识库向量索引（RAG）
+.repo_agent_kb/
+
 # 系统文件
 .DS_Store
 Thumbs.db

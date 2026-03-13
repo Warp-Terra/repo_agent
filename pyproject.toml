@@ -5,11 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "repo-agent"
 version = "0.3.0"
-description = "本地代码仓库问答 Agent（Gemini/Kimi），支持后续 RAG 与知识库扩展"
+description = "本地代码仓库问答 Agent（Kimi），支持后续 RAG 与知识库扩展"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "google-genai>=1.0.0",
     "openai>=1.0.0",
     "textual>=0.58.1",
 ]
@@ -19,9 +18,8 @@ repo-agent = "repo_agent.__main__:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0.0"]
-# 后续 RAG/知识库 可在此增加依赖，例如：
-# rag = ["sentence-transformers", "chromadb"]
-# kb = ["langchain-text-splitters"]
+# sentence-transformers>=3.0 才支持 Python 3.12（旧版会拉取已废弃的 pytorch-transformers 导致 regex 等安装失败）
+rag = ["sentence-transformers>=3.0.0", "numpy>=1.20.0", "chromadb>=0.4.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]

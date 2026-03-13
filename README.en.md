@@ -2,7 +2,7 @@
 
 [English](./README.en.md) | [中文](./README.zh.md) | [Home](./README.md)
 
-A Python-based local code repository Q&A agent that supports multiple model providers (Gemini, Kimi). Through the Function Calling/Tool Calling mechanism, it automatically invokes tool functions to access the code repository under the **current working directory** and answer users' natural-language questions. The current version adopts an architecture of "**managed Agent subprocess + TUI frontend**", and the project layout reserves modules for future **local RAG** and **local knowledge base** extensions.
+A Python-based local code repository Q&A agent using Kimi (Moonshot) paid API. Through the Function Calling/Tool Calling mechanism, it automatically invokes tool functions to access the code repository under the **current working directory** and answer users' natural-language questions. The current version adopts an architecture of "**managed Agent subprocess + TUI frontend**", and the project layout reserves modules for future **local RAG** and **local knowledge base** extensions.
 
 ## Features
 
@@ -10,7 +10,7 @@ A Python-based local code repository Q&A agent that supports multiple model prov
 - Automatic code content search (`search_files`)
 - Read specific file snippets (`read_file`)
 - List directory structure (`list_dir`)
-- Freely switch between Gemini and Kimi (OpenAI-compatible)
+- Uses Kimi (OpenAI-compatible) API
 - Agent loop based on Function Calling/Tool Calling
 - Up to 30 effective tool calls per turn (with duplicate-call protection)
 - Consecutive repeated tool calls with identical arguments automatically reuse the previous result
@@ -22,7 +22,7 @@ A Python-based local code repository Q&A agent that supports multiple model prov
 ## Requirements
 
 - Python 3.10+
-- Gemini API Key (Google AI Studio) or Kimi API Key (Moonshot)
+- Kimi API Key (Moonshot, paid API)
 
 ## Installation
 
@@ -69,39 +69,7 @@ cp .env.example .env
 Copy-Item .env.example .env
 ```
 
-Set the model provider first:
-
-```bash
-# Linux / macOS (choose one: gemini / kimi)
-export LLM_PROVIDER=gemini
-
-# Windows PowerShell
-$env:LLM_PROVIDER="gemini"
-```
-
-### Gemini
-
-**Method 1: Environment variables**
-
-```bash
-# Linux / macOS
-export GEMINI_API_KEY=your_api_key_here
-
-# Windows PowerShell
-$env:GEMINI_API_KEY="your_api_key_here"
-
-# Windows CMD
-set GEMINI_API_KEY=your_api_key_here
-```
-
-**Method 2: `.env` file**
-
-Create a `.env` file in either location below and write `GEMINI_API_KEY=your_api_key_here`:
-
-- The **current working directory** when running `python -m repo_agent` (the repository root being analyzed)
-- The **project repository root** (the directory containing the `repo_agent` folder)
-
-### Kimi (Moonshot)
+Configure Kimi (Moonshot) in `.env`:
 
 ```bash
 # Linux / macOS
@@ -124,9 +92,6 @@ LLM_PROVIDER=kimi
 MOONSHOT_API_KEY=your_kimi_api_key_here
 KIMI_MODEL_ID=kimi-k2-turbo-preview
 KIMI_BASE_URL=https://api.moonshot.cn/v1
-
-# Optional: used when switching back to Gemini
-GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 ## Usage
@@ -220,7 +185,7 @@ repo_agent/
 │   │   └── settings.py      # API Key + agentd address/token
 │   ├── agent/               # Agent core
 │   │   ├── __init__.py
-│   │   ├── client.py        # Multi-provider client (Gemini/Kimi)
+│   │   ├── client.py        # Kimi client (OpenAI-compatible)
 │   │   ├── prompts.py       # System prompts and constants
 │   │   └── loop.py          # Main loop and tool scheduling
 │   ├── daemon/              # Long-running service side
@@ -255,7 +220,7 @@ repo_agent/
 
 ## Extension Notes
 
-- **Add new tools**: Implement functions under `repo_agent/tools/`, and register names and function declarations in `registry.py` (automatically adapted for Gemini/Kimi).
+- **Add new tools**: Implement functions under `repo_agent/tools/`, and register names and function declarations in `registry.py` (adapted for Kimi/OpenAI-compatible API).
 - **Local RAG**: Implement `embeddings`, `store`, and `retriever` in `rag/`, then either add new tools (such as `search_knowledge_base`) or inject as context.
 - **Local knowledge base**: Implement `loader` and `index` in `kb/`, chunk and vectorize documents, then write them into `rag.store`.
 

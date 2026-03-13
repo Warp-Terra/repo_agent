@@ -96,8 +96,41 @@ def _stop_agent_process(
         process.join(timeout=max(0.5, shutdown_timeout_seconds))
 
 
+def _cmd_build_kb(args: argparse.Namespace) -> None:
+    """执行知识库构建并打印结果。"""
+    try:
+        from repo_agent.kb import build_index
+    except ImportError as e:
+        print("构建知识库需要 RAG 依赖，请先执行：pip install 'repo-agent[rag]'")
+        raise SystemExit(1) from e
+    from pathlib import Path
+    from repo_agent.config.settings import load_embedding_provider
+    from repo_agent.rag.store import VectorStore
+    root = Path.cwd()
+    max_files = getattr(args, "max_files", None)
+    max_chunks = getattr(args, "max_chunks", None)
+    provider = load_embedding_provider()
+    if provider == "kimi":
+        print("向量化：kimi（Moonshot-v1-embedding），复用 MOONSHOT_API_KEY，不加载本地模型。")
+    elif provider == "openai":
+        print("向量化：openai（云端 API），不加载本地模型，内存占用低。")
+    else:
+        print("向量化：local（本地模型）。【当前使用本地模型，内存占用高】")
+        print("  若期望使用云端 API 却看到本行，请检查 .env：REPO_AGENT_EMBEDDING=kimi 或 openai（注意拼写与无多余空格）。")
+        print("  使用云端时需设置 MOONSHOT_API_KEY（kimi）或 OPENAI_API_KEY（openai）。")
+    store = VectorStore(project_root=root)
+    backend = store.backend_name()
+    print(f"存储后端：{backend}（默认 SimpleStore，按批落盘，内存 <100MB）。")
+    if max_chunks is not None or max_files is not None:
+        print(f"正在从 {root} 加载文档并构建索引（max_files={max_files}, max_chunks={max_chunks}）...")
+    else:
+        print(f"正在从 {root} 加载文档并构建索引（流式处理，内存占用可控）...")
+    n = build_index(project_root=root, max_files=max_files, max_chunks=max_chunks, store=store)
+    print(f"知识库构建完成，共写入 {n} 个文档块。索引目录：{root / '.repo_agent_kb'}")
+
+
 def main() -> None:
-    """命令行入口：自动托管 agent 子进程并运行 TUI。"""
+    """命令行入口：默认托管 agent 子进程并运行 TUI；支持 build-kb 子命令。"""
     mp.freeze_support()
 
     default_host = load_agentd_host()
@@ -120,24 +153,49 @@ def main() -> None:
         default=15.0,
         help="等待 agent 服务启动的超时秒数",
     )
-    # 内部参数：仅供子进程直启 agent 守护服务使用。
     parser.add_argument("--run-agentd", action="store_true", help=argparse.SUPPRESS)
+    subparsers = parser.add_subparsers(dest="command", help="子命令")
+    build_parser = subparsers.add_parser("build-kb", help="构建当前项目知识库索引（供 RAG 检索）")
+    build_parser.add_argument(
+        "--max-chunks",
+        type=int,
+        default=None,
+        metavar="N",
+        help="最多索引 N 个块，内存紧张时可设如 5000 或 10000",
+    )
+    build_parser.add_argument(
+        "--max-files",
+        type=int,
+        default=None,
+        metavar="N",
+        help="最多索引 N 个文件",
+    )
 
     args = parser.parse_args()
-    token = _resolve_token(args.token)
-
-    if args.run_agentd:
-        _agent_process_main(args.host, args.port, token, args.max_events)
+    if getattr(args, "command", None) == "build-kb":
+        _cmd_build_kb(args)
         return
 
-    endpoint = _resolve_endpoint(args.host, args.port)
+    host = args.host
+    port = args.port
+    token = _resolve_token(args.token)
+    session_id = args.session_id
+    max_events = args.max_events
+    startup_timeout = args.startup_timeout
+    run_agentd = args.run_agentd
+
+    if run_agentd:
+        _agent_process_main(host, port, token, max_events)
+        return
+
+    endpoint = _resolve_endpoint(host, port)
     agent_process = mp.Process(
         target=_agent_process_main,
         kwargs={
-            "host": args.host,
-            "port": args.port,
+            "host": host,
+            "port": port,
             "token": token,
-            "max_events": args.max_events,
+            "max_events": max_events,
         },
         name="repo-agentd",
         daemon=False,
@@ -149,9 +207,9 @@ def main() -> None:
             endpoint=endpoint,
             token=token,
             process=agent_process,
-            timeout_seconds=args.startup_timeout,
+            timeout_seconds=startup_timeout,
         )
-        _run_tui_entry(endpoint=endpoint, token=token, session_id=args.session_id)
+        _run_tui_entry(endpoint=endpoint, token=token, session_id=session_id)
     except Exception as e:
         print(f"启动失败：{e}")
         sys.exit(1)

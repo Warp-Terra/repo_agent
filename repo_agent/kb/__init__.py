@@ -1,10 +1,11 @@
 """
-知识库模块（预留）：本地知识库的构建与管理。
+知识库模块：本地知识库的构建与管理。
 
-后续可扩展：
-- loader: 文档加载（Markdown、代码文件、PDF 等）
-- index: 索引构建（分块、向量化、写入 store）
+- loader: 文档加载（按扩展名过滤）
+- index: 索引构建（分块、向量化、写入 rag.store）
 """
 
-# 占位
-__all__: list[str] = []
+from repo_agent.kb.index import build_index
+from repo_agent.kb.loader import load_documents
+
+__all__ = ["load_documents", "build_index"]

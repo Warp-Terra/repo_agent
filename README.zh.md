@@ -2,7 +2,7 @@
 
 [English](./README.en.md) | [中文](./README.zh.md) | [首页](./README.md)
 
-基于 Python 的本地代码仓库问答 Agent，支持多模型厂商（Gemini、Kimi）。通过 Function Calling/Tool Calling 机制，自动调用工具函数访问**当前工作目录**下的代码仓库，回答用户的自然语言问题。当前版本采用「**自动托管 Agent 子进程 + TUI 交互端**」架构，项目结构为后续**本地 RAG** 与**本地知识库**扩展预留模块。
+基于 Python 的本地代码仓库问答 Agent，使用 Kimi（Moonshot）付费 API。通过 Function Calling/Tool Calling 机制，自动调用工具函数访问**当前工作目录**下的代码仓库，回答用户的自然语言问题。当前版本采用「**自动托管 Agent 子进程 + TUI 交互端**」架构，项目结构为后续**本地 RAG** 与**本地知识库**扩展预留模块。
 
 ## 功能
 
@@ -10,7 +10,8 @@
 - 自动搜索代码文件内容（`search_files`）
 - 读取指定文件片段（`read_file`）
 - 列出目录结构（`list_dir`）
-- 支持 Gemini 与 Kimi（OpenAI 兼容）自由切换
+- **语义检索知识库**（`search_knowledge_base`，需先安装可选依赖并执行 `build-kb`）
+- 使用 Kimi（OpenAI 兼容）API
 - 基于 Function Calling/Tool Calling 的 Agent 循环
 - 单轮最多 30 次有效工具调用（含重复调用保护）
 - 连续重复的同参工具调用会自动复用上次结果
@@ -22,7 +23,7 @@
 ## 环境要求
 
 - Python 3.10+
-- Gemini API Key（Google AI Studio）或 Kimi API Key（Moonshot）
+- Kimi API Key（Moonshot，付费 API）
 
 ## 安装
 
@@ -69,39 +70,7 @@ cp .env.example .env
 Copy-Item .env.example .env
 ```
 
-先设置模型厂商：
-
-```bash
-# Linux / macOS（gemini / kimi 二选一）
-export LLM_PROVIDER=gemini
-
-# Windows PowerShell
-$env:LLM_PROVIDER="gemini"
-```
-
-### Gemini
-
-**方式一：环境变量**
-
-```bash
-# Linux / macOS
-export GEMINI_API_KEY=your_api_key_here
-
-# Windows PowerShell
-$env:GEMINI_API_KEY="your_api_key_here"
-
-# Windows CMD
-set GEMINI_API_KEY=your_api_key_here
-```
-
-**方式二：`.env` 文件**
-
-在以下任一位置创建 `.env` 文件并写入 `GEMINI_API_KEY=your_api_key_here`：
-
-- 运行 `python -m repo_agent` 时的**当前工作目录**（即被分析的仓库根目录）
-- 本项目的**仓库根目录**（即 `repo_agent` 文件夹所在目录）
-
-### Kimi（Moonshot）
+在 `.env` 中配置 Kimi（Moonshot）：
 
 ```bash
 # Linux / macOS
@@ -124,9 +93,6 @@ LLM_PROVIDER=kimi
 MOONSHOT_API_KEY=your_kimi_api_key_here
 KIMI_MODEL_ID=kimi-k2-turbo-preview
 KIMI_BASE_URL=https://api.moonshot.cn/v1
-
-# 可选：切回 Gemini 时使用
-GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 ## 使用方法
@@ -220,7 +186,7 @@ repo_agent/
 │   │   └── settings.py      # API Key + agentd 地址/token
 │   ├── agent/               # Agent 核心
 │   │   ├── __init__.py
-│   │   ├── client.py        # 多厂商客户端（Gemini/Kimi）
+│   │   ├── client.py        # Kimi 客户端（OpenAI 兼容）
 │   │   ├── prompts.py       # 系统提示与常量
 │   │   └── loop.py          # 主循环与工具调度
 │   ├── daemon/              # 常驻服务端
@@ -234,30 +200,62 @@ repo_agent/
 │   ├── tools/               # 工具
 │   │   ├── __init__.py
 │   │   ├── registry.py      # 工具注册表（声明 + 函数）
-│   │   └── repo.py          # 仓库工具：search_files, read_file, list_dir
+│   │   ├── repo.py          # 仓库工具：search_files, read_file, list_dir
+│   │   └── rag.py           # RAG 工具：search_knowledge_base
 │   ├── ui/                  # 远程 TUI 交互层
 │   │   ├── __init__.py
 │   │   └── tui.py
-│   ├── rag/                 # RAG 预留（本地检索增强）
+│   ├── rag/                 # RAG（本地检索增强）
 │   │   ├── __init__.py
-│   │   ├── embeddings.py    # 本地 Embedding
-│   │   ├── store.py         # 向量存储
+│   │   ├── embeddings.py    # 本地 Embedding（sentence-transformers）
+│   │   ├── store.py         # 向量存储（Chroma）
 │   │   └── retriever.py     # 检索器
-│   └── kb/                  # 知识库预留
+│   └── kb/                  # 知识库
 │       ├── __init__.py
 │       ├── loader.py        # 文档加载
-│       └── index.py         # 索引构建
+│       └── index.py         # 索引构建（分块、向量化、写入 store）
 ├── requirements.txt
 ├── pyproject.toml           # 包配置，支持 pip install -e .
 ├── .gitignore
 └── README.md
 ```
 
+## RAG 与知识库（可选）
+
+启用语义检索需安装可选依赖并构建索引：
+
+```bash
+pip install -e ".[rag]"
+repo-agent build-kb
+```
+
+若使用 **pipx** 安装，可只注入 RAG 所需部分依赖（无需 Chroma 的 C++ 构建环境）：
+
+```bash
+# 仅安装 sentence-transformers + numpy，使用内置简单向量存储（适合 Windows）
+pipx inject repo-agent sentence-transformers numpy
+repo-agent build-kb
+```
+
+- **何时需要 build-kb**：每个项目只需在**第一次**想用语义检索时构建一次；之后在该项目下启动 Agent 会自动使用已有索引。也可不手动执行——**首次调用 `search_knowledge_base` 时若发现索引为空，会自动做「轻量」构建（约 150 文件/1500 块）再检索**，避免大仓库一次性占满内存导致进程被系统杀掉。
+- **build-kb 的作用**：在当前工作目录递归加载文本文件（.py、.md、.txt 等），分块后向量化并写入项目下的 `.repo_agent_kb/`。索引按项目隔离，换目录启动 Agent 即自动用该目录的索引。**大项目（数千文件）建议在终端单独执行 `repo-agent build-kb` 做完整索引，避免在 Agent 内首次自动构建时占用过多内存。**
+- **Windows 说明**：若安装 `chromadb` 时报错「Microsoft Visual C++ 14.0 or greater is required」，可**不安装 chromadb**，只安装 `sentence-transformers` 和 `numpy`；程序会自动使用内置的纯 Python 向量存储，无需 C++ 编译。
+- **内存说明**：即使仓库只有几 KB 代码，**首次**执行 build-kb 会加载 sentence-transformers 和 PyTorch，可能占用约 **2～8GB 内存**（视是否安装 GPU 版 PyTorch）。若本机内存紧张或出现闪退/黑屏，可先安装 **CPU 版 PyTorch** 再装 sentence-transformers，以降低占用：  
+  `pip install torch --index-url https://download.pytorch.org/whl/cpu`，然后再 `pip install sentence-transformers`（或 `pipx inject repo-agent sentence-transformers numpy`）。
+- **低内存 / 无 GPU 环境（如 16GB 内存办公机）**：可设置环境变量 `REPO_AGENT_LOW_MEMORY=1` 再执行 build-kb 或使用语义检索。该模式下会使用更小的 embedding 模型（paraphrase-MiniLM-L3-v2）并减小建索引的批大小，显著降低内存与 CPU 占用，适合「16GB 内存、无独显」的机器。若之前未在低内存模式下建过索引，启用后需重新执行一次 `repo-agent build-kb`。  
+  示例（PowerShell）：`$env:REPO_AGENT_LOW_MEMORY="1"; repo-agent build-kb`
+- **使用云端 API 做向量化（推荐内存紧张时）**：在 **运行 `repo-agent build-kb` 之前**，在 `.env` 中设置 `REPO_AGENT_EMBEDDING=kimi` 或 `REPO_AGENT_EMBEDDING=openai`。  
+  - **kimi**：使用 Moonshot 的 `moonshot-v1-embedding` 模型，**复用 MOONSHOT_API_KEY**（与对话同一把 key），无需额外 key；建索引与检索不占本地模型内存。  
+  - **openai**：使用 OpenAI Embedding，需单独配置 `OPENAI_API_KEY`。  
+  执行 build-kb 时首行会显示当前向量化方式（如「向量化：kimi（Moonshot-v1-embedding）」）；若显示「向量化：local」说明未读到配置，仍会使用本地模型。使用云端后需重新执行一次 `repo-agent build-kb`（因向量维度与本地模型不同）。云端按调用量计费。
+- **建索引时内存/CPU 仍很高**：当前默认使用 SimpleStore（按批落盘，内存 <100MB），不再默认加载 Chroma。若需 Chroma 后端可设 `REPO_AGENT_USE_CHROMA=1`（内存占用高）。也可用 `repo-agent build-kb --max-chunks 5000` 或 `--max-files 500` 限制索引规模。
+- 未安装 `[rag]` 时，调用 `search_knowledge_base` 会得到安装提示，不影响其他工具使用。
+
 ## 扩展说明
 
-- **新增工具**：在 `repo_agent/tools/` 下实现函数，并在 `registry.py` 中注册名称与函数声明（会自动适配 Gemini/Kimi）。
-- **本地 RAG**：在 `rag/` 中实现 `embeddings`、`store`、`retriever`，可新增工具（如 `search_knowledge_base`）或作为上下文注入。
-- **本地知识库**：在 `kb/` 中实现 `loader` 与 `index`，对文档分块、向量化后写入 `rag.store`。
+- **新增工具**：在 `repo_agent/tools/` 下实现函数，并在 `registry.py` 中注册名称与函数声明（会适配 Kimi/OpenAI 兼容接口）。
+- **本地 RAG**：已实现 `rag/` 的 `embeddings`、`store`、`retriever` 及工具 `search_knowledge_base`；可扩展为预注入上下文等。
+- **本地知识库**：已实现 `kb/` 的 `loader` 与 `index`，通过 `repo-agent build-kb` 构建索引。
 
 ## 安全说明
 

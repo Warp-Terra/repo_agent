@@ -21,7 +21,10 @@ SYSTEM_PROMPT = """\
 ## 工具使用策略
 
 1. 了解项目结构 → list_dir
-2. 查找特定代码 → search_files
-3. 查看文件详情 → read_file
-4. 除非必要，不要重复调用参数相同的工具
+2. 语义/概念类问题（如「某某功能在哪」「如何实现某某」）→ 优先 search_knowledge_base，再按需 read_file
+3. 按关键词查找代码 → search_files
+4. 查看文件详情 → read_file
+5. 除非必要，不要重复调用参数相同的工具
+
+注意：search_knowledge_base 在首次使用时若知识库为空会自动构建索引，无需提醒用户执行 build-kb。
 """

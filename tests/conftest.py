@@ -23,7 +23,7 @@ def clean_env(monkeypatch):
     import repo_agent.config.settings as settings
 
     keys = [
-        "LLM_PROVIDER", "GEMINI_API_KEY", "GEMINI_MODEL_ID",
+        "LLM_PROVIDER",
         "MOONSHOT_API_KEY", "KIMI_API_KEY", "OPENAI_API_KEY",
         "KIMI_MODEL_ID", "LLM_MODEL_ID", "KIMI_BASE_URL", "OPENAI_BASE_URL",
         "AGENTD_HOST", "AGENTD_PORT", "AGENTD_TOKEN",

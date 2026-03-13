@@ -1,4 +1,4 @@
-"""Agent 主循环：支持 Gemini 与 Kimi(OpenAI 兼容) 的对话与工具调用。"""
+"""Agent 主循环：Kimi（OpenAI 兼容）的对话与工具调用。"""
 
 import json
 import re
@@ -6,8 +6,6 @@ import sys
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
-
-from google.genai import types
 
 from repo_agent.agent.client import AgentRuntime, create_client
 from repo_agent.agent.prompts import MAX_TOOL_CALLS_PER_TURN, SYSTEM_PROMPT
@@ -114,80 +112,23 @@ def _call_with_retry(
 
 
 def build_tools(provider: str) -> Any:
-    """根据不同厂商构建工具声明。"""
-    if provider == "gemini":
-        declarations = [
-            types.FunctionDeclaration(
-                name=d["name"],
-                description=d["description"],
-                parameters_json_schema=d["parameters"],
-            )
-            for d in TOOL_DECLARATIONS
-        ]
-        return [types.Tool(function_declarations=declarations)]
-
-    if provider == "kimi":
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": d["name"],
-                    "description": d["description"],
-                    "parameters": d["parameters"],
-                },
-            }
-            for d in TOOL_DECLARATIONS
-        ]
-
-    raise ValueError(f"不支持的模型厂商：{provider}")
+    """构建 OpenAI 兼容格式的工具声明。"""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": d["name"],
+                "description": d["description"],
+                "parameters": d["parameters"],
+            },
+        }
+        for d in TOOL_DECLARATIONS
+    ]
 
 
 def _append_user_message(provider: str, history: list[Any], user_input: str) -> None:
     """向历史中追加用户消息。"""
-    if provider == "gemini":
-        history.append(
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=user_input)],
-            )
-        )
-        return
-
-    if provider == "kimi":
-        history.append({"role": "user", "content": user_input})
-        return
-
-    raise ValueError(f"不支持的模型厂商：{provider}")
-
-
-def _invoke_gemini(
-    runtime: AgentRuntime,
-    history: list[Any],
-    tools: list[types.Tool],
-    event_handler: AgentEventHandler | None = None,
-) -> tuple[str, list[FunctionCallRecord], Any]:
-    """执行一轮 Gemini 调用，并归一化返回结构。"""
-    response = _call_with_retry(
-        lambda: runtime.client.models.generate_content(
-            model=runtime.model_id,
-            contents=history,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                tools=tools,
-            ),
-        ),
-        event_handler=event_handler,
-    )
-
-    candidate = response.candidates[0]
-    function_calls = [
-        FunctionCallRecord(
-            name=fc.name,
-            args=dict(fc.args) if fc.args else {},
-        )
-        for fc in (response.function_calls or [])
-    ]
-    return (response.text or "", function_calls, candidate.content)
+    history.append({"role": "user", "content": user_input})
 
 
 def _invoke_kimi(
@@ -196,11 +137,17 @@ def _invoke_kimi(
     tools: list[dict[str, Any]],
     event_handler: AgentEventHandler | None = None,
 ) -> tuple[str, list[FunctionCallRecord], dict[str, Any]]:
-    """执行一轮 Kimi(OpenAI 兼容)调用，并归一化返回结构。"""
+    """执行一轮 Kimi（OpenAI 兼容）调用，并归一化返回结构。"""
+    # 保证首条为 system，与 OpenAI 兼容接口一致
+    messages = (
+        history
+        if history and (isinstance(history[0], dict) and history[0].get("role") == "system")
+        else [{"role": "system", "content": SYSTEM_PROMPT}, *history]
+    )
     response = _call_with_retry(
         lambda: runtime.client.chat.completions.create(
             model=runtime.model_id,
-            messages=history,
+            messages=messages,
             tools=tools,
             tool_choice="auto",
             temperature=0.0,
@@ -255,11 +202,7 @@ def _invoke_model_turn(
     event_handler: AgentEventHandler | None = None,
 ) -> tuple[str, list[FunctionCallRecord], Any]:
     """统一的一轮模型调用入口。"""
-    if runtime.provider == "gemini":
-        return _invoke_gemini(runtime, history, tools, event_handler=event_handler)
-    if runtime.provider == "kimi":
-        return _invoke_kimi(runtime, history, tools, event_handler=event_handler)
-    raise ValueError(f"不支持的模型厂商：{runtime.provider}")
+    return _invoke_kimi(runtime, history, tools, event_handler=event_handler)
 
 
 def _append_tool_results(
@@ -268,47 +211,19 @@ def _append_tool_results(
     tool_results: list[tuple[FunctionCallRecord, str]],
 ) -> None:
     """将工具执行结果追加到对话历史。"""
-    if provider == "gemini":
-        parts = [
-            types.Part.from_function_response(
-                name=fc.name,
-                response={"result": result},
-            )
-            for fc, result in tool_results
-        ]
-        history.append(types.Content(role="tool", parts=parts))
-        return
-
-    if provider == "kimi":
-        for fc, result in tool_results:
-            history.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": fc.call_id or "",
-                    "content": result,
-                }
-            )
-        return
-
-    raise ValueError(f"不支持的模型厂商：{provider}")
+    for fc, result in tool_results:
+        history.append(
+            {
+                "role": "tool",
+                "tool_call_id": fc.call_id or "",
+                "content": result,
+            }
+        )
 
 
 def _append_assistant_text(provider: str, history: list[Any], text: str) -> None:
     """将最终 assistant 文本追加到历史。"""
-    if provider == "gemini":
-        history.append(
-            types.Content(
-                role="assistant",
-                parts=[types.Part.from_text(text=text)],
-            )
-        )
-        return
-
-    if provider == "kimi":
-        history.append({"role": "assistant", "content": text})
-        return
-
-    raise ValueError(f"不支持的模型厂商：{provider}")
+    history.append({"role": "assistant", "content": text})
 
 
 def _execute_tool(name: str, args: dict[str, Any]) -> str:

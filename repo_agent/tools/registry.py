@@ -6,16 +6,17 @@
 2. 在本模块的 TOOL_FUNCTIONS 与 TOOL_DECLARATIONS 中注册
 """
 
-from repo_agent.tools import repo
+from repo_agent.tools import repo, rag as rag_tools
 
 # 工具函数映射（名称 -> 可调用函数）
 TOOL_FUNCTIONS = {
     "search_files": repo.search_files,
     "read_file": repo.read_file,
     "list_dir": repo.list_dir,
+    "search_knowledge_base": rag_tools.search_knowledge_base,
 }
 
-# 中立函数声明（可映射到 google-genai / openai tools 格式）
+# 中立函数声明（可映射到 OpenAI tools 格式）
 TOOL_DECLARATIONS = [
     {
         "name": "search_files",
@@ -76,6 +77,28 @@ TOOL_DECLARATIONS = [
                 },
             },
             "required": [],
+        },
+    },
+    {
+        "name": "search_knowledge_base",
+        "description": (
+            "在知识库中做语义检索，返回与问题最相关的代码或文档片段（路径、行号、内容摘要）。"
+            "适合先了解「和这个问题相关的部分在哪」，再配合 read_file 精读。"
+            "首次调用时若索引为空会自动构建，无需用户手动执行 build-kb；可直接使用。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "自然语言问题或关键词，如「用户登录在哪里实现」「配置如何加载」",
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "返回的最相关条数，默认 5，建议 3～10",
+                },
+            },
+            "required": ["query"],
         },
     },
 ]

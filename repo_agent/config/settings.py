@@ -3,10 +3,9 @@
 import os
 from pathlib import Path
 
-SUPPORTED_PROVIDERS = {"gemini", "kimi"}
-DEFAULT_PROVIDER = "gemini"
+SUPPORTED_PROVIDERS = {"kimi"}
+DEFAULT_PROVIDER = "kimi"
 DEFAULT_MODEL_IDS = {
-    "gemini": "gemini-2.5-flash",
     "kimi": "kimi-k2-turbo-preview",
 }
 DEFAULT_KIMI_BASE_URL = "https://api.moonshot.cn/v1"
@@ -85,7 +84,7 @@ def _normalize_provider(value: str) -> str:
 
 
 def load_llm_provider() -> str:
-    """读取当前模型厂商，默认 gemini。"""
+    """读取当前模型厂商，默认 kimi。"""
     raw = _get_config_value(["LLM_PROVIDER"]) or DEFAULT_PROVIDER
     return _normalize_provider(raw)
 
@@ -93,8 +92,6 @@ def load_llm_provider() -> str:
 def load_model_id(provider: str | None = None) -> str:
     """读取当前厂商对应的模型 ID。"""
     resolved_provider = provider or load_llm_provider()
-    if resolved_provider == "gemini":
-        return _get_config_value(["GEMINI_MODEL_ID", "LLM_MODEL_ID"]) or DEFAULT_MODEL_IDS["gemini"]
     if resolved_provider == "kimi":
         return _get_config_value(["KIMI_MODEL_ID", "LLM_MODEL_ID"]) or DEFAULT_MODEL_IDS["kimi"]
     raise ValueError(f"未知厂商：{resolved_provider}")
@@ -103,15 +100,6 @@ def load_model_id(provider: str | None = None) -> str:
 def load_provider_api_key(provider: str | None = None) -> str:
     """读取厂商 API Key。"""
     resolved_provider = provider or load_llm_provider()
-    if resolved_provider == "gemini":
-        key = _get_config_value(["GEMINI_API_KEY"])
-        if key:
-            return key
-        raise ValueError(
-            "未找到 GEMINI_API_KEY。\n"
-            "请设置环境变量 GEMINI_API_KEY，或在 .env 中写入 GEMINI_API_KEY=your_key"
-        )
-
     if resolved_provider == "kimi":
         key = _get_config_value(["MOONSHOT_API_KEY", "KIMI_API_KEY", "OPENAI_API_KEY"])
         if key:
@@ -120,7 +108,6 @@ def load_provider_api_key(provider: str | None = None) -> str:
             "未找到 Kimi API Key。\n"
             "请设置 MOONSHOT_API_KEY（推荐），或 KIMI_API_KEY / OPENAI_API_KEY"
         )
-
     raise ValueError(f"未知厂商：{resolved_provider}")
 
 
@@ -130,8 +117,8 @@ def load_kimi_base_url() -> str:
 
 
 def load_api_key() -> str:
-    """兼容旧接口：读取 Gemini API Key。"""
-    return load_provider_api_key("gemini")
+    """兼容旧接口：读取 Kimi API Key。"""
+    return load_provider_api_key("kimi")
 
 
 def load_agentd_host() -> str:
@@ -159,3 +146,41 @@ def load_agentd_token() -> str | None:
     if not token:
         return None
     return token
+
+
+# RAG 向量化：local（本地模型）| kimi | openai，默认 kimi（云端 API，不占本地内存）
+EMBEDDING_PROVIDERS = {"local", "kimi", "openai"}
+DEFAULT_EMBEDDING_PROVIDER = "kimi"
+
+# Kimi 向量化模型名（Moonshot 兼容 OpenAI /v1/embeddings 接口）
+KIMI_EMBEDDING_MODEL = "moonshot-v1-embedding"
+
+
+def load_embedding_provider() -> str:
+    """读取 RAG 向量化方式：local / kimi（Moonshot-v1-embedding）/ openai。"""
+    raw = _get_config_value(["REPO_AGENT_EMBEDDING", "REPO_AGENT_EMBEDDING_PROVIDER"])
+    if not raw:
+        return DEFAULT_EMBEDDING_PROVIDER
+    p = raw.strip().lower()
+    if p not in EMBEDDING_PROVIDERS:
+        return DEFAULT_EMBEDDING_PROVIDER
+    return p
+
+
+def load_embedding_api_key(provider: str) -> str:
+    """读取云端 Embedding 所用 API Key（kimi 用 MOONSHOT_API_KEY，openai 用 OPENAI_API_KEY）。"""
+    if provider == "kimi":
+        key = _get_config_value(["MOONSHOT_API_KEY", "KIMI_API_KEY", "OPENAI_API_KEY"])
+        if key:
+            return key
+        raise ValueError(
+            "未找到 MOONSHOT_API_KEY。使用 Kimi 向量化时请在 .env 中设置 MOONSHOT_API_KEY（与对话共用即可）。"
+        )
+    if provider == "openai":
+        key = _get_config_value(["OPENAI_API_KEY"])
+        if key:
+            return key
+        raise ValueError(
+            "未找到 OPENAI_API_KEY。使用云端向量化时请在 .env 中设置 OPENAI_API_KEY。"
+        )
+    raise ValueError(f"本地向量化无需 API Key：{provider}")
